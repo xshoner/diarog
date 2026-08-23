@@ -1,7 +1,23 @@
 import type { NextConfig } from "next";
+import crypto from "crypto";
 
 // 공개 가능한 클라이언트 키의 기본값 (비밀키는 절대 여기 두지 않는다 — Vercel env 전용)
 const isVercelProd = process.env.VERCEL_ENV === "production";
+
+// VAPID 공개키: env 미설정 시 SUPABASE_SERVICE_ROLE_KEY에서 결정론적 파생
+// (src/lib/derived.ts와 동일 로직 — 서버 개인키와 짝이 맞아야 함)
+function derivedVapidPublic(): string {
+  const seedValue = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "diarog-dev-seed";
+  const ecdh = crypto.createECDH("prime256v1");
+  for (let i = 0; ; i++) {
+    const d = crypto.createHmac("sha256", seedValue).update(`diarog:vapid:${i}`).digest();
+    try {
+      ecdh.setPrivateKey(d);
+      break;
+    } catch { /* rehash */ }
+  }
+  return ecdh.getPublicKey().toString("base64url");
+}
 
 const nextConfig: NextConfig = {
   env: {
@@ -16,8 +32,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_KAKAO_MAP_JS_KEY:
       process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY ?? "ff4036aee9eefccc9fc989155567d3e0",
     NEXT_PUBLIC_VAPID_PUBLIC_KEY:
-      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ??
-      "BPLEmzlT-En6wGuPfNn5Apa_23JY7bEtMKLPipjvL1_lsSEEq0_AgqTiqU6FiD32ivYmlZf8p4rJVbogibBw_mY",
+      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? derivedVapidPublic(),
   },
 };
 

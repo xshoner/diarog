@@ -11,8 +11,10 @@ export const maxDuration = 300;
 // CRON 21:00 KST — 초안 마감 조립 + 푸시 발송 (§9)
 // + 3일 경과 미확정 draft 자동 임시확정(soft-confirm, §5.3-6)
 export async function GET(req: NextRequest) {
+  // Vercel Cron(UA) 또는 CRON_SECRET 일치 시 허용
   const auth = req.headers.get("authorization");
-  if (env.cronSecret() && auth !== `Bearer ${env.cronSecret()}`) {
+  const isVercelCron = (req.headers.get("user-agent") ?? "").includes("vercel-cron");
+  if (!isVercelCron && auth !== `Bearer ${env.cronSecret()}`) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 

@@ -1,3 +1,5 @@
+import { derivedSecret, derivedVapidKeys } from "./derived";
+
 function req(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env: ${name}`);
@@ -16,8 +18,8 @@ export const env = {
   googleClientSecret: () => req("GOOGLE_CLIENT_SECRET"),
   kakaoRestKey: () => req("KAKAO_REST_API_KEY"),
   kmaKey: () => req("KMA_SERVICE_KEY"),
-  authSecret: () => req("AUTH_SECRET"),
-  vapidPublic: () => req("NEXT_PUBLIC_VAPID_PUBLIC_KEY"),
-  vapidPrivate: () => req("VAPID_PRIVATE_KEY"),
-  cronSecret: () => process.env.CRON_SECRET || "",
+  authSecret: () => process.env.AUTH_SECRET || derivedSecret("auth-session"),
+  vapidPublic: () => process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || derivedVapidKeys().publicKey,
+  vapidPrivate: () => process.env.VAPID_PRIVATE_KEY || derivedVapidKeys().privateKey,
+  cronSecret: () => process.env.CRON_SECRET || derivedSecret("cron"),
 };
