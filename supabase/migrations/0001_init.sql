@@ -88,6 +88,9 @@ create table if not exists moments (
 );
 create index if not exists idx_moments_user_date on moments(user_id, date);
 
+alter table public.photos
+drop constraint if exists fk_photos_moment;
+
 alter table photos
   add constraint fk_photos_moment foreign key (moment_id) references moments(id) on delete set null;
 
