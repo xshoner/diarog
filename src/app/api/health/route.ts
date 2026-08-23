@@ -17,7 +17,7 @@ export async function GET() {
 
   let dbStatus = "unknown";
   try {
-    const { error } = await db().from("users_profile").select("user_id", { head: true, count: "exact" });
+    const { error } = await db().from("users_profile").select("user_id").limit(1);
     dbStatus = error ? `error: ${error.message}` : "ok";
   } catch (e) {
     dbStatus = `unreachable: ${String(e).slice(0, 100)}`;
