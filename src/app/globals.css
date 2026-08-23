@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #faf7f2;
+  --color-ink: #262220;
+  --color-ink-soft: #6b6460;
+  --color-line: #e8e2d9;
+  --color-card: #ffffff;
+  --color-accent: #c2703d;
+  --color-accent-soft: #f5e6da;
+  --color-good: #4a7c59;
+  --color-warn: #b8860b;
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-paper: #171412;
+    --color-ink: #ece7e1;
+    --color-ink-soft: #a39a92;
+    --color-line: #2e2925;
+    --color-card: #211d1a;
+    --color-accent: #d98c55;
+    --color-accent-soft: #3a2c21;
+    --color-good: #7cb08c;
+    --color-warn: #d4a72c;
+  }
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--color-paper);
+  min-height: 100dvh;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+/* 얇은 스크롤바 */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 4px; }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.35s ease both; }
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+/* 확신도 낮은 항목 점선 (§5.3-2) */
+.uncertain { border-bottom: 1.5px dashed var(--color-warn); }
