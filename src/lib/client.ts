@@ -22,18 +22,38 @@ export interface ProcessedPhoto {
     timeConfidence: "exif" | "file" | "unknown";
     lat: number | null;
     lng: number | null;
+    gpsSource: "exif" | "device" | null;
     isReceipt: boolean;
     exif: Record<string, unknown>;
   };
 }
 
+/** 현재 기기 위치 (권한 거부/실패 시 null) — 안드로이드 포토 피커가 위치 EXIF를 제거하는 경우의 폴백 */
+export async function getDeviceLocation(): Promise<{ lat: number; lng: number } | null> {
+  if (typeof navigator === "undefined" || !("geolocation" in navigator)) return null;
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => resolve(null),
+      { timeout: 5000, maximumAge: 10 * 60 * 1000 }
+    );
+  });
+}
+
+const DEVICE_GPS_WINDOW_MS = 12 * 3600 * 1000; // 촬영 12시간 이내 사진만 현재 위치로 대체
+
 /** 파일 → EXIF 추출(다운스케일 전, FR-2.2) + 1024px/320px 리사이즈 (FR-2.1) */
-export async function processPhoto(file: File, isReceipt = false): Promise<ProcessedPhoto> {
+export async function processPhoto(
+  file: File,
+  isReceipt = false,
+  deviceLoc: { lat: number; lng: number } | null = null,
+): Promise<ProcessedPhoto> {
   const exifr = (await import("exifr")).default;
   let takenAt: string;
   let timeConfidence: "exif" | "file" | "unknown" = "exif";
   let lat: number | null = null;
   let lng: number | null = null;
+  let gpsSource: "exif" | "device" | null = null;
   const exif: Record<string, unknown> = {};
 
   try {
@@ -49,6 +69,7 @@ export async function processPhoto(file: File, isReceipt = false): Promise<Proce
     if (gps && typeof gps.latitude === "number") {
       lat = gps.latitude;
       lng = gps.longitude;
+      gpsSource = "exif";
     }
     if (parsed?.Make) exif.make = parsed.Make;
     if (parsed?.Model) exif.model = parsed.Model;
@@ -69,11 +90,18 @@ export async function processPhoto(file: File, isReceipt = false): Promise<Proce
     }
   });
 
+  // EXIF에 GPS가 없으면(포토 피커의 위치 제거 등) 최근 촬영분에 한해 현재 기기 위치로 대체
+  if (lat == null && deviceLoc && Math.abs(Date.now() - Date.parse(takenAt)) <= DEVICE_GPS_WINDOW_MS) {
+    lat = deviceLoc.lat;
+    lng = deviceLoc.lng;
+    gpsSource = "device";
+  }
+
   const mid = await resize(bitmap, 1024);
   const thumb = await resize(bitmap, 320);
   bitmap.close();
 
-  return { mid, thumb, meta: { takenAt, timeConfidence, lat, lng, isReceipt, exif } };
+  return { mid, thumb, meta: { takenAt, timeConfidence, lat, lng, gpsSource, isReceipt, exif } };
 }
 
 async function resize(bitmap: ImageBitmap, maxDim: number): Promise<Blob> {

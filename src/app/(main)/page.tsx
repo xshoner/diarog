@@ -85,11 +85,13 @@ function HomeInner() {
           {drafts.length > 0 && (
             <Link href={`/ritual/${date}`}
               className="block bg-accent text-white rounded-2xl p-4 text-center font-semibold shadow-lg shadow-accent/25 active:scale-[0.99] transition-transform">
-              ✨ {drafts.length}개의 순간이 확인을 기다려요 — 30초 확정하기
+              {bundle?.diary
+                ? `✨ 새로운 순간 ${drafts.length}개 — 일기에 반영하기`
+                : `✨ ${drafts.length}개의 순간이 확인을 기다려요 — 30초 확정하기`}
             </Link>
           )}
 
-          {bundle?.diary && <DiaryView diary={bundle.diary} date={date} />}
+          {bundle?.diary && <DiaryView diary={bundle.diary} date={date} onChanged={() => load(date)} />}
 
           <section className="space-y-2.5">
             <h2 className="text-sm font-semibold text-ink-soft px-1">

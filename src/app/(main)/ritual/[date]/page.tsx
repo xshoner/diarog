@@ -142,7 +142,7 @@ export default function RitualPage({ params }: { params: Promise<{ date: string 
       {diary && (
         <section className="mt-5 fade-up">
           <h2 className="text-sm font-semibold text-ink-soft px-1 mb-2">오늘의 일기</h2>
-          <DiaryView diary={diary} date={date} />
+          <DiaryView diary={diary} date={date} onChanged={async () => { setDiary(null); await load(); }} />
           <button onClick={() => router.push("/")}
             className="w-full mt-4 bg-card border border-line rounded-full py-3 font-semibold">
             저장하고 홈으로
@@ -150,13 +150,15 @@ export default function RitualPage({ params }: { params: Promise<{ date: string 
         </section>
       )}
 
-      {/* 하단 고정 확정 버튼 (§5.3-5) */}
-      {!diary && moments.length > 0 && (
+      {/* 하단 고정 확정 버튼 (§5.3-5) — 일기가 있어도 새 draft가 있으면 재확정 가능 */}
+      {moments.length > 0 && (drafts.length > 0 || !diary) && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 z-30">
           <button onClick={confirmDay} disabled={confirming}
             className="w-full bg-accent text-white rounded-full py-4 font-bold text-[15px] shadow-xl shadow-accent/30 active:scale-[0.99] transition-transform disabled:opacity-70">
             {confirming ? (
               <span className="pulse-soft">나의 페르소나가 일기를 쓰는 중…</span>
+            ) : diary ? (
+              `새 순간 ${drafts.length}개를 일기에 반영하기`
             ) : (
               "오늘 하루 확정하기"
             )}

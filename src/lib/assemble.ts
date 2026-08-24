@@ -251,7 +251,8 @@ export async function assembleDay(userId: string, date: string): Promise<{ momen
   let seq = confirmedIds.length;
   let created = 0;
 
-  for (const cluster of clusters) {
+  // 클러스터별 컨텍스트 수집 + AI 해석을 병렬 실행 (기존 순차 → 총 소요 = 가장 느린 클러스터 1개 수준)
+  const analyses = await Promise.all(clusters.map(async (cluster) => {
     const c = centroid(cluster);
     const mStart = new Date(cluster[0].taken_at);
     const mEnd = new Date(cluster[cluster.length - 1].taken_at);
@@ -278,6 +279,11 @@ export async function assembleDay(userId: string, date: string): Promise<{ momen
       else throw e;
     }
 
+    return { cluster, c, mStart, mEnd, address, pois, weather, nearEvents, ai };
+  }));
+
+  // 저장 단계는 seq/질문 수 카운터의 일관성을 위해 순차 처리
+  for (const { cluster, c, mStart, mEnd, address, pois, weather, nearEvents, ai } of analyses) {
     // 장소 확정: LLM place_match > 최근접 POI
     let place: PoiCandidate | null = null;
     const pmIdx = ai?.place_match?.poi_index;

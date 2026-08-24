@@ -18,7 +18,7 @@ export async function POST(req: Request) {
 
     const meta = JSON.parse(metaRaw) as {
       takenAt?: string; timeConfidence?: string; lat?: number | null; lng?: number | null;
-      isReceipt?: boolean; exif?: Record<string, unknown>;
+      gpsSource?: string; isReceipt?: boolean; exif?: Record<string, unknown>;
     };
     const takenAt = meta.takenAt && !isNaN(Date.parse(meta.takenAt))
       ? new Date(meta.takenAt) : new Date();
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       time_confidence: meta.timeConfidence === "file" ? "file" : meta.timeConfidence === "unknown" ? "unknown" : "exif",
       lat: hasGps ? meta.lat : null,
       lng: hasGps ? meta.lng : null,
-      gps_source: hasGps ? "exif" : "none",
+      gps_source: hasGps ? (meta.gpsSource === "device" ? "interpolated" : "exif") : "none",
       storage_mid_path: midPath,
       storage_thumb_path: thumbPath,
       exif_raw: meta.exif ?? null,

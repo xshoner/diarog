@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, processPhoto, uploadPhoto } from "@/lib/client";
+import { api, getDeviceLocation, processPhoto, uploadPhoto } from "@/lib/client";
 
 interface Item {
   name: string;
@@ -30,13 +30,16 @@ export default function UploadPage() {
       ...list.map((f) => ({ name: f.name, status: "processing" as const, isReceipt: receiptMode })),
     ]);
 
+    // 포토 피커가 위치 EXIF를 제거한 경우를 대비해 기기 위치를 미리 확보 (권한 거부 시 null)
+    const deviceLoc = await getDeviceLocation();
+
     let done = 0;
     for (let i = 0; i < list.length; i++) {
       const idx = startIdx + i;
       const set = (patch: Partial<Item>) =>
         setItems((prev) => prev.map((it, j) => (j === idx ? { ...it, ...patch } : it)));
       try {
-        const processed = await processPhoto(list[i], receiptMode);
+        const processed = await processPhoto(list[i], receiptMode, deviceLoc);
         set({ status: "uploading", preview: URL.createObjectURL(processed.thumb) });
         await uploadPhoto(processed);
         set({ status: "done" });
@@ -109,7 +112,8 @@ export default function UploadPage() {
         <div className="mt-4 p-3 rounded-xl bg-card border border-line text-xs text-ink-soft leading-relaxed fade-up">
           📍 올린 사진에 위치 정보가 없어 지도·이동 경로를 표시할 수 없어요.
           안드로이드는 사진 선택 화면(포토 피커)이 개인정보 보호를 위해 위치를 지운 채 전달하는 경우가 많아요.
-          선택 화면에서 <b>찾아보기/파일(내 파일) 앱</b>으로 사진을 고르면 위치가 유지됩니다.
+          <b>브라우저 위치 권한을 허용</b>하면 오늘 찍은 사진에 현재 위치를 대신 기록하고,
+          선택 화면에서 <b>찾아보기/파일(내 파일) 앱</b>으로 고르면 원본 위치가 유지됩니다.
         </div>
       )}
 

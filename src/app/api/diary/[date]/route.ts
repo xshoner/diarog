@@ -1,6 +1,21 @@
 import { requireUser, UnauthorizedError, unauthorizedResponse } from "@/lib/session";
 import { db } from "@/lib/supabase";
 
+// DELETE /api/diary/:date — 그날 일기 삭제 (Moment는 유지, 재확정으로 다시 생성 가능)
+export async function DELETE(_req: Request, ctx: { params: Promise<{ date: string }> }) {
+  try {
+    const { profile } = await requireUser();
+    const { date } = await ctx.params;
+    await db().from("diary_entries").delete()
+      .eq("user_id", profile.user_id).eq("date", date);
+    await db().from("analytics_events").insert({ user_id: profile.user_id, name: "diary_deleted" });
+    return Response.json({ ok: true });
+  } catch (e) {
+    if (e instanceof UnauthorizedError) return unauthorizedResponse();
+    return Response.json({ error: String(e) }, { status: 500 });
+  }
+}
+
 // PATCH /api/diary/:date {sentIdx, revised} — 문장 수정 → persona_edits 기록 (2층 학습)
 export async function PATCH(req: Request, ctx: { params: Promise<{ date: string }> }) {
   try {
