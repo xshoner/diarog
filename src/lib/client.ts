@@ -85,8 +85,11 @@ export async function processPhoto(
       takenAt = new Date(file.lastModified).toISOString();
       timeConfidence = "file"; // low_time_confidence 폴백
     }
+    // 주의: 포토 피커가 위치를 제거하면 GPS 태그가 깨진 채 남아 NaN이 나올 수 있다.
+    // typeof NaN === "number"이므로 반드시 isFinite로 검사하고, (0,0) 더미 좌표도 무시한다.
     const gps = await exifr.gps(file).catch(() => null);
-    if (gps && typeof gps.latitude === "number") {
+    if (gps && Number.isFinite(gps.latitude) && Number.isFinite(gps.longitude)
+      && !(gps.latitude === 0 && gps.longitude === 0)) {
       lat = gps.latitude;
       lng = gps.longitude;
       gpsSource = "exif";

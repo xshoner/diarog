@@ -13,7 +13,7 @@ interface Item {
 }
 
 // 화면 우측 하단에 표시되는 빌드 표식 — 폰이 옛 번들을 캐시 중인지 판별용
-const UI_BUILD = "v6";
+const UI_BUILD = "v7";
 
 // 사진 수집 (FR-2.1): 다중 선택 → 클라이언트 EXIF/다운스케일 → 업로드 → 재조립
 export default function UploadPage() {
