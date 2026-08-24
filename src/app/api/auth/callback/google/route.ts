@@ -4,6 +4,30 @@ import { db, ensurePhotoBucket } from "@/lib/supabase";
 import { createSession, getSession } from "@/lib/session";
 import { env } from "@/lib/env";
 
+// 임시 진단용 — Supabase 접속 환경 요약 (시크릿 값 자체는 절대 출력하지 않음)
+function supabaseEnvInfo(): Record<string, string> {
+  let host = "invalid-url";
+  try { host = new URL(env.supabaseUrl()).host; } catch { /* noop */ }
+  let keyKind = "unparseable";
+  try {
+    const k = env.supabaseServiceKey();
+    if (k.startsWith("sb_secret_")) keyKind = "sb_secret";
+    else if (k.startsWith("sb_publishable_")) keyKind = "sb_publishable(잘못된 키!)";
+    else {
+      const p = JSON.parse(Buffer.from(k.split(".")[1], "base64url").toString());
+      keyKind = `jwt role=${p.role ?? "?"} ref=${p.ref ?? "?"}`;
+    }
+  } catch { /* keyKind = unparseable */ }
+  return { supabaseHost: host, serviceKeyKind: keyKind };
+}
+
+function pgDiag(e: { code?: string; message?: string; details?: string | null; hint?: string | null } | null) {
+  return {
+    code: e?.code, message: e?.message, details: e?.details, hint: e?.hint,
+    ...supabaseEnvInfo(),
+  };
+}
+
 export async function GET(req: NextRequest) {
   const url = req.nextUrl;
   const code = url.searchParams.get("code");
@@ -19,9 +43,12 @@ export async function GET(req: NextRequest) {
     if (!tokens.id_token) return fail("no_id_token");
     const g = decodeIdToken(tokens.id_token);
 
+    if (!g.sub) return fail("no_google_sub");
+
     // 사용자 upsert
-    const { data: existing } = await db().from("users_profile")
+    const { data: existing, error: selErr } = await db().from("users_profile")
       .select("user_id, onboarded").eq("google_sub", g.sub).maybeSingle();
+    if (selErr) console.error("[google-callback] users_profile select failed", pgDiag(selErr));
 
     let userId: string;
     let onboarded = false;
@@ -35,7 +62,10 @@ export async function GET(req: NextRequest) {
       const { data: created, error } = await db().from("users_profile").insert({
         google_sub: g.sub, email: g.email, display_name: g.name, avatar_url: g.picture,
       }).select("user_id").single();
-      if (error || !created) return fail("signup_failed");
+      if (error || !created) {
+        console.error("[google-callback] users_profile insert failed", pgDiag(error));
+        return fail("signup_failed");
+      }
       userId = created.user_id;
       await db().from("analytics_events").insert({ user_id: userId, name: "signup" });
     }
@@ -64,7 +94,8 @@ export async function GET(req: NextRequest) {
     const res = NextResponse.redirect(`${env.appUrl()}${dest}`);
     res.cookies.delete("oauth_state");
     return res;
-  } catch {
+  } catch (e) {
+    console.error("[google-callback] unhandled error", e instanceof Error ? e.message : String(e));
     return fail("exchange_failed");
   }
 }
