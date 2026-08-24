@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, subscribePush } from "@/lib/client";
+import { api, requestDeviceLocation, subscribePush } from "@/lib/client";
 import type { Me } from "@/lib/types";
+
+interface MyPlace { id: string; name: string; lat: number; lng: number; radius_m: number }
 
 const PERSONA_NAMES: Record<string, string> = {
   plain: "📝 담백한 기록가", essay: "🌙 감성 에세이스트", humor: "😎 유머러스한 친구", dry: "🔍 건조한 관찰자",
@@ -15,10 +17,42 @@ export default function SettingsPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [places, setPlaces] = useState<MyPlace[]>([]);
 
   useEffect(() => {
     api<Me>("/api/me").then(setMe).catch(() => router.push("/onboarding"));
+    api<{ places: MyPlace[] }>("/api/places").then((r) => setPlaces(r.places)).catch(() => {});
   }, [router]);
+
+  async function registerCurrentPlace() {
+    setBusy("place");
+    try {
+      const { loc, reason } = await requestDeviceLocation();
+      if (!loc) {
+        alert(reason === "denied"
+          ? "위치 권한이 거부돼 있어요. 브라우저 설정에서 허용해 주세요."
+          : "현재 위치를 가져오지 못했어요. 휴대폰 위치(GPS)를 켜고 다시 시도해 주세요.");
+        return;
+      }
+      const name = prompt("이 위치의 이름을 지어 주세요 (예: 사무실, 집)");
+      if (!name?.trim()) return;
+      const res = await api<{ place: MyPlace; address: string | null }>("/api/places", {
+        method: "POST", body: JSON.stringify({ name: name.trim(), lat: loc.lat, lng: loc.lng }),
+      });
+      setPlaces((prev) => [...prev.filter((p) => p.id !== res.place.id), res.place]);
+      alert(`'${res.place.name}' 등록 완료${res.address ? `\n${res.address}` : ""}\n앞으로 이 근처(150m)에서 찍는 사진은 '${res.place.name}'로 표시돼요.`);
+    } catch (e) {
+      alert(`등록에 실패했어요.\n${e instanceof Error ? e.message : ""}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deletePlace(p: MyPlace) {
+    if (!confirm(`'${p.name}' 장소를 삭제할까요?`)) return;
+    await api(`/api/places/${p.id}`, { method: "DELETE" }).catch(() => {});
+    setPlaces((prev) => prev.filter((x) => x.id !== p.id));
+  }
 
   async function setPersona(persona: string) {
     setBusy("persona");
@@ -149,6 +183,27 @@ export default function SettingsPage() {
               className="rounded-full px-4 py-1.5 text-sm bg-accent text-white font-semibold">연결</a>
           )}
         </div>
+      </section>
+
+      <section className="bg-card border border-line rounded-2xl p-4">
+        <p className="text-sm font-semibold">내 장소</p>
+        <p className="text-[11px] text-ink-soft mb-2.5">
+          등록한 위치 근처(150m)에서 찍은 사진은 자동으로 그 이름으로 표시돼요
+        </p>
+        {places.length > 0 && (
+          <ul className="space-y-1.5 mb-3">
+            {places.map((p) => (
+              <li key={p.id} className="flex items-center justify-between bg-paper border border-line rounded-xl px-3 py-2">
+                <span className="text-sm font-medium">📍 {p.name}</span>
+                <button onClick={() => deletePlace(p)} className="text-xs text-red-500 px-1">삭제</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button onClick={registerCurrentPlace} disabled={busy === "place"}
+          className="w-full bg-accent text-white rounded-full py-2.5 text-sm font-semibold disabled:opacity-60">
+          {busy === "place" ? "위치 확인 중…" : "📍 지금 위치를 내 장소로 등록"}
+        </button>
       </section>
 
       <section className="bg-card border border-line rounded-2xl divide-y divide-line">

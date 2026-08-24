@@ -240,6 +240,11 @@ export async function assembleDay(userId: string, date: string): Promise<{ momen
     .lt("starts_at", end.toISOString());
   const events = (eventRows ?? []) as CalEvent[];
 
+  // 내 장소 (사용자 등록 별칭 — 반경 내 사진은 이 이름 최우선). 테이블 미생성 시 빈 배열.
+  const { data: myPlaceRows } = await db().from("user_places")
+    .select("name, lat, lng, radius_m").eq("user_id", userId);
+  const myPlaces = (myPlaceRows ?? []) as Array<{ name: string; lat: number; lng: number; radius_m: number }>;
+
   const clusters = clusterPhotos(photos);
   let questionCount = 0;
   // 기존 미답변 질문 수 파악 (하루 최대 3개)
@@ -258,11 +263,20 @@ export async function assembleDay(userId: string, date: string): Promise<{ momen
     const mEnd = new Date(cluster[cluster.length - 1].taken_at);
 
     // 컨텍스트 수집 (병렬)
-    const [address, pois, weather] = await Promise.all([
+    const [address, rawPois, weather] = await Promise.all([
       c ? coordToAddress(c.lat, c.lng) : Promise.resolve(null),
       c ? nearbyPois(c.lat, c.lng) : Promise.resolve([] as PoiCandidate[]),
       c ? getWeather(c.lat, c.lng, mStart) : Promise.resolve(null),
     ]);
+
+    // 내 장소 매칭: 반경 내면 장소 후보 맨 앞에 배치 (AI 컨텍스트에도 전달)
+    const matched = c
+      ? myPlaces.find((p) => distanceMeters(c.lat, c.lng, p.lat, p.lng) <= (p.radius_m ?? 150))
+      : undefined;
+    const myPlacePoi: PoiCandidate | null = matched && c
+      ? { name: matched.name, category: "내 장소", distance: 0, lat: c.lat, lng: c.lng, address: address ?? "" }
+      : null;
+    const pois = myPlacePoi ? [myPlacePoi, ...rawPois] : rawPois;
 
     // 시간대 겹치는 일정 (±90분 창)
     const nearEvents = events.filter((ev) => {
@@ -279,16 +293,18 @@ export async function assembleDay(userId: string, date: string): Promise<{ momen
       else throw e;
     }
 
-    return { cluster, c, mStart, mEnd, address, pois, weather, nearEvents, ai };
+    return { cluster, c, mStart, mEnd, address, pois, myPlacePoi, weather, nearEvents, ai };
   }));
 
   // 저장 단계는 seq/질문 수 카운터의 일관성을 위해 순차 처리
-  for (const { cluster, c, mStart, mEnd, address, pois, weather, nearEvents, ai } of analyses) {
-    // 장소 확정: LLM place_match > 최근접 POI
-    let place: PoiCandidate | null = null;
-    const pmIdx = ai?.place_match?.poi_index;
-    if (pmIdx != null && pois[pmIdx]) place = pois[pmIdx];
-    else if (pois[0] && pois[0].distance <= 80) place = pois[0];
+  for (const { cluster, c, mStart, mEnd, address, pois, myPlacePoi, weather, nearEvents, ai } of analyses) {
+    // 장소 확정: 내 장소 > LLM place_match > 최근접 POI
+    let place: PoiCandidate | null = myPlacePoi;
+    if (!place) {
+      const pmIdx = ai?.place_match?.poi_index;
+      if (pmIdx != null && pois[pmIdx]) place = pois[pmIdx];
+      else if (pois[0] && pois[0].distance <= 80) place = pois[0];
+    }
 
     // 일정 매칭: 휴리스틱 + LLM 5:5 (§8.2)
     let bestEvent: CalEvent | null = null;
