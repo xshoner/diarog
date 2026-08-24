@@ -12,6 +12,9 @@ interface Item {
   hasGps?: boolean;
 }
 
+// 화면 우측 하단에 표시되는 빌드 표식 — 폰이 옛 번들을 캐시 중인지 판별용
+const UI_BUILD = "v6";
+
 // 사진 수집 (FR-2.1): 다중 선택 → 클라이언트 EXIF/다운스케일 → 업로드 → 재조립
 export default function UploadPage() {
   const router = useRouter();
@@ -45,8 +48,10 @@ export default function UploadPage() {
       ...list.map((f) => ({ name: f.name, status: "processing" as const, isReceipt: receiptMode })),
     ]);
 
-    // 포토 피커가 위치 EXIF를 제거한 경우를 대비해 기기 위치 사용 (권한 거부 시 null)
-    const geoRes = await (geoPromise.current ?? requestGeo());
+    // 포토 피커가 위치 EXIF를 제거한 경우를 대비해 기기 위치 사용 (권한 거부 시 null).
+    // 페이지 로드 때 실패했더라도 업로드 시점에 한 번 더 시도한다.
+    let geoRes = await (geoPromise.current ?? requestGeo());
+    if (!geoRes.loc) geoRes = await requestGeo();
     const deviceLoc = geoRes.loc;
 
     let done = 0;
@@ -56,8 +61,10 @@ export default function UploadPage() {
         setItems((prev) => prev.map((it, j) => (j === idx ? { ...it, ...patch } : it)));
       try {
         const processed = await processPhoto(list[i], receiptMode, deviceLoc);
-        // 위치가 없으면 실패 사유를 함께 기록 (서버 로그로 원인 진단용)
-        if (processed.meta.lat == null) processed.meta.exif.geoReason = geoRes.reason;
+        // 위치 파이프라인 진단 정보를 모든 사진에 기록 (버전/사유/기기위치 확보 여부)
+        processed.meta.exif.geoReason = geoRes.reason;
+        processed.meta.exif.hadDeviceLoc = !!deviceLoc;
+        processed.meta.exif.appBuild = UI_BUILD;
         const hasGps = processed.meta.lat != null;
         set({ status: "uploading", preview: URL.createObjectURL(processed.thumb), hasGps });
         const res = await uploadPhoto(processed);
@@ -91,6 +98,7 @@ export default function UploadPage() {
         <h1 className="text-xl font-bold">사진 추가</h1>
         <p className="text-sm text-ink-soft">원본은 기기에 남고, 축소본만 서버로 전송돼요</p>
         <div className="mt-2 text-xs">
+          <span className="text-ink-soft/50 mr-1.5">{UI_BUILD}</span>
           {geo.reason === "checking" && (
             <span className="text-ink-soft pulse-soft">📍 현재 위치 확인 중…</span>
           )}
