@@ -20,7 +20,8 @@ interface CallOptions {
   maxTokens?: number;
 }
 
-const DAILY_CALL_LIMIT = 25; // FR 비용 가드: 사용자·일당 상한
+// FR 비용 가드: 사용자·일당 상한 (env로 조정 가능, 기본 100 — flash 단가 기준 하루 수십 원 수준)
+const DAILY_CALL_LIMIT = Number(process.env.AI_DAILY_CALL_LIMIT ?? 100);
 
 export class AiLimitError extends Error {
   constructor() { super("daily ai call limit exceeded"); }

@@ -45,7 +45,8 @@ export default function UploadPage() {
     ]);
 
     // 포토 피커가 위치 EXIF를 제거한 경우를 대비해 기기 위치 사용 (권한 거부 시 null)
-    const deviceLoc = (await (geoPromise.current ?? requestGeo())).loc;
+    const geoRes = await (geoPromise.current ?? requestGeo());
+    const deviceLoc = geoRes.loc;
 
     let done = 0;
     for (let i = 0; i < list.length; i++) {
@@ -54,6 +55,8 @@ export default function UploadPage() {
         setItems((prev) => prev.map((it, j) => (j === idx ? { ...it, ...patch } : it)));
       try {
         const processed = await processPhoto(list[i], receiptMode, deviceLoc);
+        // 위치가 없으면 실패 사유를 함께 기록 (서버 로그로 원인 진단용)
+        if (processed.meta.lat == null) processed.meta.exif.geoReason = geoRes.reason;
         set({ status: "uploading", preview: URL.createObjectURL(processed.thumb) });
         const res = await uploadPhoto(processed);
         if (res.duplicate) {

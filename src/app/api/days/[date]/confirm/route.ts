@@ -62,6 +62,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
     });
   } catch (e) {
     if (e instanceof UnauthorizedError) return unauthorizedResponse();
+    if (e instanceof Error && e.message.includes("limit")) {
+      return Response.json({ error: "오늘 AI 사용량 한도에 도달했어요. 내일 다시 시도해 주세요." }, { status: 429 });
+    }
     return Response.json({ error: String(e) }, { status: 500 });
   }
 }
