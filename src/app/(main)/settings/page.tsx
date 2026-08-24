@@ -227,6 +227,7 @@ export default function SettingsPage() {
           ③ 당신의 데이터는 AI 학습에 사용되지 않고, 광고는 영원히 없어요 ④ 기록을 지우면 파생 데이터(캡션·검색 인덱스)도 함께 지워져요
           ⑤ 내보내기는 언제나 열려 있어요
         </p>
+        <a href="/privacy" className="inline-block mt-2 text-accent font-semibold">개인정보처리방침 →</a>
       </section>
     </main>
   );
