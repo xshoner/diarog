@@ -24,6 +24,9 @@ export default function RitualPage({ params }: { params: Promise<{ date: string 
 
   useEffect(() => {
     if (sessionStart.current === 0) sessionStart.current = Date.now();
+    // 홈에서 특정 순간을 탭해 들어온 경우 해당 편집기를 바로 연다 (?m=momentId)
+    const m = new URLSearchParams(window.location.search).get("m");
+    if (m) setEditingId(m);
   }, []);
 
   const load = useCallback(async () => {
@@ -195,8 +198,34 @@ function InlineEditor({ moment, photos, onSave, onDelete, onDeletePhoto }: {
   const [mood, setMood] = useState(moment.mood ?? "");
   const [peopleText, setPeopleText] = useState((moment.people ?? []).map((p) => p.name).join(", "));
 
+  const hasAi = !!(moment.ai?.scene_summary || moment.ai?.facts?.length || moment.ai?.inferences?.length);
+
   return (
     <div className="border-t border-line p-3 space-y-2.5 bg-paper/50" onClick={(e) => e.stopPropagation()}>
+      {hasAi && (
+        <div className="bg-card border border-line rounded-xl p-2.5 text-xs leading-relaxed space-y-1">
+          <p className="font-semibold text-ink-soft">🤖 AI가 사진·일정·날씨에서 파악한 내용</p>
+          {moment.ai?.scene_summary && <p>{moment.ai.scene_summary}</p>}
+          {(moment.ai?.facts ?? []).map((f, i) => (
+            <p key={`f${i}`} className="text-ink-soft">• {f}</p>
+          ))}
+          {(moment.ai?.inferences ?? []).map((x, i) => (
+            <p key={`i${i}`} className="text-ink-soft/80">≈ {x.text} {x.confidence != null && `(확신 ${Math.round(x.confidence * 100)}%)`}</p>
+          ))}
+          {(moment.address || moment.weather?.temp != null) && (
+            <p className="text-ink-soft pt-0.5">
+              {moment.address && `📍 ${moment.address}`}
+              {moment.address && moment.weather?.temp != null && " · "}
+              {moment.weather?.temp != null && `🌡 ${moment.weather.temp}℃${moment.weather.precip && moment.weather.precip !== "없음" ? ` ${moment.weather.precip}` : ""}`}
+            </p>
+          )}
+        </div>
+      )}
+      {!hasAi && (
+        <p className="text-xs text-ink-soft">
+          이 순간은 AI 분석 정보가 없어요. 사진에 위치가 있으면 장소·날씨가 자동으로 채워져요.
+        </p>
+      )}
       {photos.length > 0 && (
         <div>
           <span className="text-xs text-ink-soft">사진 {photos.length}장 (✕를 눌러 삭제)</span>

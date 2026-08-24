@@ -29,16 +29,28 @@ export interface ProcessedPhoto {
   };
 }
 
-/** 현재 기기 위치 (권한 거부/실패 시 null) — 안드로이드 포토 피커가 위치 EXIF를 제거하는 경우의 폴백 */
-export async function getDeviceLocation(): Promise<{ lat: number; lng: number } | null> {
-  if (typeof navigator === "undefined" || !("geolocation" in navigator)) return null;
+export type GeoReason = "ok" | "denied" | "timeout" | "unavailable" | "unsupported";
+
+/** 현재 기기 위치 + 실패 사유 — 안드로이드 포토 피커가 위치 EXIF를 제거하는 경우의 폴백 */
+export async function requestDeviceLocation(): Promise<{ loc: { lat: number; lng: number } | null; reason: GeoReason }> {
+  if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+    return { loc: null, reason: "unsupported" };
+  }
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => resolve(null),
-      { timeout: 5000, maximumAge: 10 * 60 * 1000 }
+      (p) => resolve({ loc: { lat: p.coords.latitude, lng: p.coords.longitude }, reason: "ok" }),
+      (err) => resolve({
+        loc: null,
+        reason: err.code === 1 ? "denied" : err.code === 3 ? "timeout" : "unavailable",
+      }),
+      // GPS 콜드스타트·권한 팝업 대기를 고려해 넉넉히
+      { timeout: 20000, maximumAge: 5 * 60 * 1000 }
     );
   });
+}
+
+export async function getDeviceLocation(): Promise<{ lat: number; lng: number } | null> {
+  return (await requestDeviceLocation()).loc;
 }
 
 const DEVICE_GPS_WINDOW_MS = 12 * 3600 * 1000; // 촬영 12시간 이내 사진만 현재 위치로 대체

@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/client";
 import type { DayBundle } from "@/lib/types";
 import KakaoMap from "@/components/KakaoMap";
@@ -23,6 +23,7 @@ function dateLabel(date: string): string {
 }
 
 function HomeInner() {
+  const router = useRouter();
   const params = useSearchParams();
   const initial = params.get("date");
   const [date, setDate] = useState(
@@ -103,7 +104,8 @@ function HomeInner() {
               </Link>
             </div>
             {moments.map((m, i) => (
-              <MomentCard key={m.id} moment={m} photos={bundle!.photos} evidence={bundle!.evidence} index={i} />
+              <MomentCard key={m.id} moment={m} photos={bundle!.photos} evidence={bundle!.evidence} index={i}
+                onClick={() => router.push(`/ritual/${date}?m=${m.id}`)} />
             ))}
           </section>
         </div>

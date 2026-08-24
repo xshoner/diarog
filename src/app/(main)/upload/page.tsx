@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, getDeviceLocation, processPhoto, uploadPhoto } from "@/lib/client";
+import { api, GeoReason, processPhoto, requestDeviceLocation, uploadPhoto } from "@/lib/client";
 
 interface Item {
   name: string;
@@ -21,16 +21,19 @@ export default function UploadPage() {
   const [doneCount, setDoneCount] = useState(0);
   const [gpsCount, setGpsCount] = useState(0);
   const [dupCount, setDupCount] = useState(0);
-  const [geoDenied, setGeoDenied] = useState(false);
+  const [geo, setGeo] = useState<{ loc: { lat: number; lng: number } | null; reason: GeoReason | "checking" }>(
+    { loc: null, reason: "checking" });
+  const geoPromise = useRef<ReturnType<typeof requestDeviceLocation> | null>(null);
 
-  useEffect(() => {
-    try {
-      navigator.permissions?.query({ name: "geolocation" as PermissionName }).then((s) => {
-        setGeoDenied(s.state === "denied");
-        s.onchange = () => setGeoDenied(s.state === "denied");
-      }).catch(() => {});
-    } catch { /* 미지원 브라우저 */ }
+  // 페이지 진입 즉시 위치 요청 — 권한 팝업이 사진 선택 전에 뜨도록
+  const requestGeo = useCallback(() => {
+    setGeo({ loc: null, reason: "checking" });
+    const p = requestDeviceLocation();
+    geoPromise.current = p;
+    p.then(setGeo);
+    return p;
   }, []);
+  useEffect(() => { requestGeo(); }, [requestGeo]);
 
   async function handleFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -41,8 +44,8 @@ export default function UploadPage() {
       ...list.map((f) => ({ name: f.name, status: "processing" as const, isReceipt: receiptMode })),
     ]);
 
-    // 포토 피커가 위치 EXIF를 제거한 경우를 대비해 기기 위치를 미리 확보 (권한 거부 시 null)
-    const deviceLoc = await getDeviceLocation();
+    // 포토 피커가 위치 EXIF를 제거한 경우를 대비해 기기 위치 사용 (권한 거부 시 null)
+    const deviceLoc = (await (geoPromise.current ?? requestGeo())).loc;
 
     let done = 0;
     for (let i = 0; i < list.length; i++) {
@@ -82,6 +85,25 @@ export default function UploadPage() {
       <header className="mb-4">
         <h1 className="text-xl font-bold">사진 추가</h1>
         <p className="text-sm text-ink-soft">원본은 기기에 남고, 축소본만 서버로 전송돼요</p>
+        <div className="mt-2 text-xs">
+          {geo.reason === "checking" && (
+            <span className="text-ink-soft pulse-soft">📍 현재 위치 확인 중…</span>
+          )}
+          {geo.reason === "ok" && (
+            <span className="text-accent">📍 위치 사용 가능 — 사진에 위치가 없으면 현재 위치로 채워요</span>
+          )}
+          {geo.reason !== "checking" && geo.reason !== "ok" && (
+            <span className="text-warn">
+              ⚠️ 위치를 가져올 수 없어요 — {
+                geo.reason === "denied" ? "권한이 거부됐어요. 브라우저 설정 > 사이트 권한 > 위치를 허용해 주세요" :
+                geo.reason === "timeout" ? "응답 시간 초과 (휴대폰 위치(GPS)가 켜져 있는지 확인)" :
+                geo.reason === "unsupported" ? "이 브라우저는 위치를 지원하지 않아요" :
+                "휴대폰 위치(GPS)가 꺼져 있는 것 같아요"
+              }
+              <button onClick={requestGeo} className="ml-1.5 underline font-semibold">다시 시도</button>
+            </span>
+          )}
+        </div>
       </header>
 
       <input ref={inputRef} type="file" accept="image/*" multiple hidden
@@ -93,12 +115,6 @@ export default function UploadPage() {
         <span className="font-semibold">{receiptMode ? "영수증 촬영/선택" : "사진 선택하기"}</span>
         <span className="text-xs text-ink-soft">여러 장을 한 번에 선택할 수 있어요</span>
       </button>
-
-      {geoDenied && (
-        <p className="mt-3 px-1 text-xs text-warn">
-          ⚠️ 위치 권한이 꺼져 있어요 — 브라우저 설정에서 위치를 허용하면 오늘 찍은 사진이 지도에 표시돼요
-        </p>
-      )}
 
       <label className="flex items-center gap-2 mt-3 px-1 text-sm text-ink-soft">
         <input type="checkbox" checked={receiptMode} onChange={(e) => setReceiptMode(e.target.checked)}
