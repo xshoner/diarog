@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exchangeCode, decodeIdToken, SCOPE_CALENDAR } from "@/lib/google";
+import { exchangeCode, decodeIdToken, syncCalendar, SCOPE_CALENDAR } from "@/lib/google";
+
+export const maxDuration = 60;
 import { db, ensurePhotoBucket } from "@/lib/supabase";
 import { createSession, getSession } from "@/lib/session";
 import { env } from "@/lib/env";
@@ -78,6 +80,8 @@ export async function GET(req: NextRequest) {
         google_refresh_token: tokens.refresh_token,
       }).eq("user_id", userId);
       await db().from("analytics_events").insert({ user_id: userId, name: "calendar_connected" });
+      // 연결 직후 즉시 1회 동기화 (기존에는 21:00 크론까지 일정 캐시가 비어 있었음)
+      await syncCalendar(userId).catch(() => {});
     }
 
     // 기존 세션 사용자가 캘린더만 추가 연동한 경우 세션 유지

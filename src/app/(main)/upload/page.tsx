@@ -19,6 +19,7 @@ export default function UploadPage() {
   const [assembling, setAssembling] = useState(false);
   const [receiptMode, setReceiptMode] = useState(false);
   const [doneCount, setDoneCount] = useState(0);
+  const [gpsCount, setGpsCount] = useState(0);
 
   async function handleFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -41,6 +42,7 @@ export default function UploadPage() {
         set({ status: "done" });
         done++;
         setDoneCount((c) => c + 1);
+        if (processed.meta.lat != null) setGpsCount((c) => c + 1);
       } catch {
         set({ status: "error" });
       }
@@ -101,6 +103,14 @@ export default function UploadPage() {
 
       {assembling && (
         <p className="text-center text-sm text-accent mt-4 pulse-soft">AI가 순간을 조립하는 중…</p>
+      )}
+
+      {doneCount > 0 && !busy && gpsCount === 0 && (
+        <div className="mt-4 p-3 rounded-xl bg-card border border-line text-xs text-ink-soft leading-relaxed fade-up">
+          📍 올린 사진에 위치 정보가 없어 지도·이동 경로를 표시할 수 없어요.
+          안드로이드는 사진 선택 화면(포토 피커)이 개인정보 보호를 위해 위치를 지운 채 전달하는 경우가 많아요.
+          선택 화면에서 <b>찾아보기/파일(내 파일) 앱</b>으로 사진을 고르면 위치가 유지됩니다.
+        </div>
       )}
 
       {doneCount > 0 && !busy && (

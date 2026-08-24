@@ -1,5 +1,6 @@
 import { requireUser, UnauthorizedError, unauthorizedResponse } from "@/lib/session";
 import { assembleDay } from "@/lib/assemble";
+import { syncCalendar } from "@/lib/google";
 import { kstDateString } from "@/lib/time";
 
 export const maxDuration = 300;
@@ -11,6 +12,8 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const date = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
       ? body.date : kstDateString();
+    // 조립 전 캘린더 최신화 (크론과 동일한 순서 — 일정 매칭 정확도 확보)
+    if (profile.calendar_connected) await syncCalendar(profile.user_id).catch(() => {});
     const result = await assembleDay(profile.user_id, date);
     return Response.json(result);
   } catch (e) {
