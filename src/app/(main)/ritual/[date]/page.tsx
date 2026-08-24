@@ -253,8 +253,9 @@ function InlineEditor({ moment, photos, onSave, onDelete, onDeletePhoto }: {
           className="mt-1 w-full bg-card border border-line rounded-xl px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
       </label>
       <label className="block text-xs text-ink-soft">
-        장소
+        장소 (입력하면 지도 위치·주소·날씨도 함께 갱신돼요)
         <input value={place} onChange={(e) => setPlace(e.target.value)}
+          placeholder="예: 충주 중앙경찰학교"
           className="mt-1 w-full bg-card border border-line rounded-xl px-3 py-2 text-sm text-ink outline-none focus:border-accent" />
       </label>
       <label className="block text-xs text-ink-soft">

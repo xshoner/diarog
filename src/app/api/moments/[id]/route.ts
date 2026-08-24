@@ -1,5 +1,7 @@
 import { requireUser, UnauthorizedError, unauthorizedResponse } from "@/lib/session";
 import { db } from "@/lib/supabase";
+import { geocodeText, coordToAddress } from "@/lib/kakao";
+import { getWeather } from "@/lib/kma";
 
 // PATCH /api/moments/:id — 인라인 편집 (제목/장소/일정연결/사람/기분/메모/사진제외)
 // 모든 수정은 corrections에 기록 (FR-4.5, MOAT 데이터)
@@ -32,6 +34,19 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (typeof body.placeName === "string" && body.placeName !== moment.place_name) {
       update.place_name = body.placeName.slice(0, 100);
       record("place", moment.place_name, body.placeName);
+      // 장소명을 카카오 키워드 검색으로 지오코딩 → 지도 좌표/주소/날씨까지 갱신
+      // (포토 피커가 위치를 지운 옛 사진의 위치를 사용자가 되살리는 경로)
+      const geo = body.placeName.trim() ? await geocodeText(body.placeName) : null;
+      if (geo) {
+        update.lat = geo.lat;
+        update.lng = geo.lng;
+        const addr = await coordToAddress(geo.lat, geo.lng).catch(() => null);
+        if (addr) update.address = addr;
+        if (!moment.weather && moment.starts_at) {
+          const w = await getWeather(geo.lat, geo.lng, new Date(moment.starts_at)).catch(() => null);
+          if (w) update.weather = w;
+        }
+      }
     }
     if (body.linkedEventId !== undefined && body.linkedEventId !== moment.linked_event_id) {
       update.linked_event_id = body.linkedEventId;

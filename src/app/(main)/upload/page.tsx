@@ -13,7 +13,7 @@ interface Item {
 }
 
 // 화면 우측 하단에 표시되는 빌드 표식 — 폰이 옛 번들을 캐시 중인지 판별용
-const UI_BUILD = "v7";
+const UI_BUILD = "v8";
 
 // 사진 수집 (FR-2.1): 다중 선택 → 클라이언트 EXIF/다운스케일 → 업로드 → 재조립
 export default function UploadPage() {
@@ -178,9 +178,10 @@ export default function UploadPage() {
 
       {doneCount > 0 && !busy && gpsCount === 0 && (
         <div className="mt-2 p-3 rounded-xl bg-card border border-line text-xs text-ink-soft leading-relaxed fade-up">
-          📍 위치가 기록되지 않았어요. 현재 위치는 <b>오늘 찍은 사진에만</b> 채워져요
-          (오래된 사진은 다른 장소일 수 있어 제외). 예전 사진의 원본 위치를 살리려면
-          사진 선택 화면에서 <b>찾아보기/파일(내 파일) 앱</b> 경로로 골라 주세요.
+          📍 위치가 기록되지 않았어요. 현재 위치는 <b>최근 90분 내 찍은 사진에만</b> 채워져요
+          (그 전 사진은 다른 장소일 수 있어서요). 예전 사진은 홈에서 순간 카드를 탭해
+          <b>장소를 입력</b>하면 지도 위치가 채워지고, 원본 위치를 살리려면 선택 화면에서
+          <b>찾아보기/파일 앱</b> 경로로 골라 주세요.
         </div>
       )}
 

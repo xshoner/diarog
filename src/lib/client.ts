@@ -53,14 +53,9 @@ export async function getDeviceLocation(): Promise<{ lat: number; lng: number } 
   return (await requestDeviceLocation()).loc;
 }
 
-const DEVICE_GPS_WINDOW_MS = 12 * 3600 * 1000; // 촬영 12시간 이내 사진만 현재 위치로 대체
-
-/** KST 기준 오늘 찍은 사진인지 (오늘 사진이면 현재 위치 폴백 허용) */
-function isTodayKst(iso: string): boolean {
-  const day = (t: number) => new Date(t + 9 * 3600_000).toISOString().slice(0, 10);
-  const parsed = Date.parse(iso);
-  return !isNaN(parsed) && day(parsed) === day(Date.now());
-}
+// 현재 위치 폴백은 "방금 찍은" 사진에만 (그보다 오래된 사진은 다른 장소일 가능성 —
+// 실제로 오전에 다른 도시에서 찍은 사진에 현재 위치가 붙는 오류가 있었음)
+const DEVICE_GPS_WINDOW_MS = 90 * 60 * 1000;
 
 /** 파일 → EXIF 추출(다운스케일 전, FR-2.2) + 1024px/320px 리사이즈 (FR-2.1) */
 export async function processPhoto(
@@ -113,15 +108,15 @@ export async function processPhoto(
     }
   });
 
-  // EXIF에 GPS가 없으면(포토 피커의 위치 제거 등) 오늘/최근 촬영분에 한해 현재 기기 위치로 대체.
-  // 오래된 사진은 다른 장소에서 찍었을 가능성이 높아 제외하고 사유를 기록한다.
+  // EXIF에 GPS가 없으면(포토 피커의 위치 제거 등) 최근 90분 내 촬영분에만 현재 기기 위치로 대체.
+  // 그보다 오래된 사진은 순간 카드에서 장소를 입력하면 좌표가 채워진다.
   if (lat == null && deviceLoc) {
-    if (isTodayKst(takenAt) || Math.abs(Date.now() - Date.parse(takenAt)) <= DEVICE_GPS_WINDOW_MS) {
+    if (Math.abs(Date.now() - Date.parse(takenAt)) <= DEVICE_GPS_WINDOW_MS) {
       lat = deviceLoc.lat;
       lng = deviceLoc.lng;
       gpsSource = "device";
     } else {
-      exif.geoSkip = "old_photo"; // 오늘 사진이 아니라 현재 위치를 붙이지 않음
+      exif.geoSkip = "not_recent"; // 방금 찍은 사진이 아니라 현재 위치를 붙이지 않음
     }
   }
 
