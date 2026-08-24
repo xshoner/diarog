@@ -9,6 +9,7 @@ interface Item {
   status: "processing" | "uploading" | "done" | "duplicate" | "error";
   preview?: string;
   isReceipt: boolean;
+  hasGps?: boolean;
 }
 
 // 사진 수집 (FR-2.1): 다중 선택 → 클라이언트 EXIF/다운스케일 → 업로드 → 재조립
@@ -57,7 +58,8 @@ export default function UploadPage() {
         const processed = await processPhoto(list[i], receiptMode, deviceLoc);
         // 위치가 없으면 실패 사유를 함께 기록 (서버 로그로 원인 진단용)
         if (processed.meta.lat == null) processed.meta.exif.geoReason = geoRes.reason;
-        set({ status: "uploading", preview: URL.createObjectURL(processed.thumb) });
+        const hasGps = processed.meta.lat != null;
+        set({ status: "uploading", preview: URL.createObjectURL(processed.thumb), hasGps });
         const res = await uploadPhoto(processed);
         if (res.duplicate) {
           set({ status: "duplicate" });
@@ -67,7 +69,7 @@ export default function UploadPage() {
         set({ status: "done" });
         done++;
         setDoneCount((c) => c + 1);
-        if (processed.meta.lat != null) setGpsCount((c) => c + 1);
+        if (hasGps) setGpsCount((c) => c + 1);
       } catch {
         set({ status: "error" });
       }
@@ -135,6 +137,11 @@ export default function UploadPage() {
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-xl pulse-soft">📷</div>
               )}
+              {(it.status === "done" || it.status === "uploading") && (
+                <span className="absolute top-1 left-1 text-[10px] bg-black/55 text-white px-1 rounded-full">
+                  {it.hasGps ? "📍" : "위치없음"}
+                </span>
+              )}
               <span className="absolute bottom-1 right-1 text-xs">
                 {it.status === "done" ? "✅" : it.status === "duplicate" ? "♻️" : it.status === "error" ? "⚠️" : (
                   <span className="pulse-soft">⏳</span>
@@ -155,12 +162,17 @@ export default function UploadPage() {
         </p>
       )}
 
+      {doneCount > 0 && !busy && (
+        <p className="text-center text-xs text-ink-soft mt-3">
+          📍 위치 기록: {gpsCount}/{doneCount}장
+        </p>
+      )}
+
       {doneCount > 0 && !busy && gpsCount === 0 && (
-        <div className="mt-4 p-3 rounded-xl bg-card border border-line text-xs text-ink-soft leading-relaxed fade-up">
-          📍 올린 사진에 위치 정보가 없어 지도·이동 경로를 표시할 수 없어요.
-          안드로이드는 사진 선택 화면(포토 피커)이 개인정보 보호를 위해 위치를 지운 채 전달하는 경우가 많아요.
-          <b>브라우저 위치 권한을 허용</b>하면 오늘 찍은 사진에 현재 위치를 대신 기록하고,
-          선택 화면에서 <b>찾아보기/파일(내 파일) 앱</b>으로 고르면 원본 위치가 유지됩니다.
+        <div className="mt-2 p-3 rounded-xl bg-card border border-line text-xs text-ink-soft leading-relaxed fade-up">
+          📍 위치가 기록되지 않았어요. 현재 위치는 <b>오늘 찍은 사진에만</b> 채워져요
+          (오래된 사진은 다른 장소일 수 있어 제외). 예전 사진의 원본 위치를 살리려면
+          사진 선택 화면에서 <b>찾아보기/파일(내 파일) 앱</b> 경로로 골라 주세요.
         </div>
       )}
 
