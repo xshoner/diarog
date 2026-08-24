@@ -52,11 +52,20 @@ export async function generateDiary(userId: string, date: string): Promise<{ sen
     for (const e of evs ?? []) eventTitles[e.id] = e.title;
   }
 
-  // 페르소나 2층: 최근 수정 쌍 ≤10 few-shot (FR-5.4)
+  // 페르소나 2층: 최근 수정 쌍 few-shot (FR-5.4) — 시간이 지날수록 사용자 문체에 수렴
   const { data: edits } = await db().from("persona_edits")
     .select("original, revised").eq("user_id", userId)
-    .order("created_at", { ascending: false }).limit(10);
+    .order("created_at", { ascending: false }).limit(20);
   const fewShot = edits ?? [];
+
+  // 사용자가 직접 다듬어 완성한 최근 일기 — 가장 강한 문체 신호
+  const { data: recentEdited } = await db().from("diary_entries")
+    .select("body_final").eq("user_id", userId).eq("edited", true)
+    .neq("date", date)
+    .order("date", { ascending: false }).limit(2);
+  const styleExemplars = (recentEdited ?? [])
+    .map((d) => d.body_final as string | null)
+    .filter((b): b is string => !!b);
 
   const momentsCtx = moments.map((m, i) => ({
     momentId: m.id,
@@ -82,14 +91,23 @@ export async function generateDiary(userId: string, date: string): Promise<{ sen
     "사실 기반 문장은 kind=fact, 추정이 섞인 문장은 kind=inference로 구분한다.",
     fewShot.length > 0 ? [
       "",
-      "사용자의 문체 교정 이력 (이 사용자는 이렇게 고쳐 쓴다 — 반영할 것):",
+      "사용자의 문체 교정 이력 (원문 → 사용자가 고친 문장). 수정 방향에서 어미·문장 길이·어투·자주 쓰는 표현을 파악해,",
+      "고쳐질 문장을 쓰지 말고 처음부터 사용자가 고친 쪽의 문체로 써라:",
       ...fewShot.map((e) => `- 원문: ${e.original}\n  수정: ${e.revised}`),
     ].join("\n") : "",
+    styleExemplars.length > 0 ? [
+      "",
+      "사용자가 직접 다듬어 완성한 최근 일기 전문 (문체의 최우선 기준 — 어미, 리듬, 어휘를 이 글에 맞출 것):",
+      ...styleExemplars.map((b, i) => `[예시 ${i + 1}] ${b.slice(0, 500)}`),
+    ].join("\n") : "",
+    "",
+    "one_line 규칙: 본문 요약의 반복이 아니라, 오늘 하루를 재치 있게 압축한 한줄평 한 문장 (25자 내외).",
+    "예: '회의 3연타를 버텨낸 커피 두 잔의 날' 같은 느낌. 근거 없는 사건은 넣지 않는다.",
     "",
     "반드시 아래 JSON으로만 응답:",
     JSON.stringify({
       diary: [{ sentence: "string", evidence_refs: ["momentId:photo"], kind: "fact|inference" }],
-      one_line: "오늘의 한 줄",
+      one_line: "오늘의 한줄평 (위트 있게, 25자 내외)",
     }),
   ].join("\n");
 

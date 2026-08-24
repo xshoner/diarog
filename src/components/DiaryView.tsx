@@ -62,7 +62,10 @@ export default function DiaryView({ diary, date, editable = true, onUpdated, onC
   return (
     <div className="bg-card border border-line rounded-2xl p-4">
       {diary.one_line && (
-        <p className="text-sm font-semibold text-accent mb-2.5">“{diary.one_line}”</p>
+        <div className="mb-3 pb-2.5 border-b border-line">
+          <p className="text-[10px] font-semibold text-ink-soft tracking-widest mb-0.5">오늘의 한 줄</p>
+          <p className="text-[15px] font-bold text-accent leading-snug">“{diary.one_line}”</p>
+        </div>
       )}
       <div className="space-y-1 leading-relaxed text-[15px]">
         {sentences.map((s, i) =>

@@ -41,6 +41,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           .eq("id", q.moment_id).eq("user_id", userId);
         changed = true;
       }
+    } else if ((q.target === "place" || q.target === "activity" || q.target === "people") && answer !== "아니에요") {
+      // 상황/장소 확인 답변 → 기록에 즉시 반영 (일기 정확도 향상)
+      const update: Record<string, unknown> = {};
+      const { data: mm } = await db().from("moments")
+        .select("ai, place_name").eq("id", q.moment_id).eq("user_id", userId).single();
+      if (mm) {
+        if (q.target === "place" && q.payload?.value && !mm.place_name) {
+          update.place_name = String(q.payload.value).slice(0, 100);
+        }
+        const ai = (mm.ai ?? {}) as { facts?: string[] };
+        const confirmed = q.payload?.value ?? q.question_text;
+        update.ai = { ...ai, facts: [...(ai.facts ?? []), `사용자 확인: ${confirmed} (${answer})`] };
+        await db().from("moments").update(update).eq("id", q.moment_id).eq("user_id", userId);
+        changed = true;
+      }
     }
 
     await db().from("moment_evidence").insert({

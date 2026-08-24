@@ -42,7 +42,7 @@ interface Call1Result {
   event_match?: { event_id?: string | null; confidence?: number; reason?: string };
   facts?: string[];
   inferences?: Array<{ text: string; confidence?: number }>;
-  question_candidates?: Array<{ q: string; options?: string[]; target?: string }>;
+  question_candidates?: Array<{ q: string; options?: string[]; target?: string; value?: string }>;
   receipt?: { store?: string; amount?: number | null; time?: string } | null;
 }
 
@@ -136,6 +136,7 @@ async function interpretMoment(
   pois: PoiCandidate[],
   events: CalEvent[],
   weather: Weather | null,
+  titleEdits: Array<{ original: string; revised: string }> = [],
 ): Promise<Call1Result | null> {
   // 대표 이미지 선별: 시간 분산 (최대 6장)
   const picked: PhotoRow[] = [];
@@ -165,6 +166,13 @@ async function interpretMoment(
   const system = [
     "너는 증거 기반 사건 해석기다. 사진과 컨텍스트에서 확인 가능한 것만 사실로 기술하고, 확인 불가한 것은 추정으로 분리한다. 근거 없는 서술은 금지.",
     "제목 후보는 한국어로, '장소에서 한 일' 형식의 자연스러운 구 형태로 (예: '성수동 파스타집에서 점심').",
+    titleEdits.length > 0 ? [
+      "사용자는 제목을 이렇게 고쳐왔다 — 이 취향(어휘·길이·톤)을 title_candidates에 반영하라:",
+      ...titleEdits.map((e) => `- ${e.original} → ${e.revised}`),
+    ].join("\n") : "",
+    "장소·상황이 애매하면 question_candidates에 사용자에게 물어볼 짧은 예/아니오 확인 질문을 1~2개 만든다.",
+    "예: '사무실인가요?'(target=place, value='사무실'), '점심 식사 중인가요?'(target=activity, value='점심 식사'), '여행 중이신가요?'(target=activity).",
+    "value에는 '맞아요' 답변 시 기록에 반영할 값(장소명·활동명)을 넣는다.",
     "영수증 사진이 있으면 receipt에 상호/금액/시각을 추출한다. 없으면 receipt는 null.",
     "반드시 아래 JSON 스키마로만 응답한다. 다른 텍스트 금지:",
     JSON.stringify({
@@ -175,10 +183,10 @@ async function interpretMoment(
       event_match: { event_id: "string|null", confidence: 0.0, reason: "string" },
       facts: ["확인된 사실"],
       inferences: [{ text: "추정 서술", confidence: 0.0 }],
-      question_candidates: [{ q: "string", options: ["맞아요", "아니에요"], target: "event_link|people|place" }],
+      question_candidates: [{ q: "string", options: ["맞아요", "아니에요"], target: "event_link|people|place|activity", value: "맞아요일 때 반영할 값" }],
       receipt: { store: "", amount: null, time: "" },
     }),
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   const messages: ChatMessage[] = [
     { role: "system", content: system },
@@ -245,6 +253,12 @@ export async function assembleDay(userId: string, date: string): Promise<{ momen
     .select("name, lat, lng, radius_m").eq("user_id", userId);
   const myPlaces = (myPlaceRows ?? []) as Array<{ name: string; lat: number; lng: number; radius_m: number }>;
 
+  // 제목 수정 취향 (페르소나 2층) — Call-1 제목 후보에 반영
+  const { data: titleEditRows } = await db().from("persona_edits")
+    .select("original, revised").eq("user_id", userId).eq("source", "moment_title")
+    .order("created_at", { ascending: false }).limit(5);
+  const titleEdits = titleEditRows ?? [];
+
   const clusters = clusterPhotos(photos);
   let questionCount = 0;
   // 기존 미답변 질문 수 파악 (하루 최대 3개)
@@ -287,7 +301,7 @@ export async function assembleDay(userId: string, date: string): Promise<{ momen
 
     let ai: Call1Result | null = null;
     try {
-      ai = await interpretMoment(userId, cluster, address, pois, nearEvents, weather);
+      ai = await interpretMoment(userId, cluster, address, pois, nearEvents, weather, titleEdits);
     } catch (e) {
       if (e instanceof AiLimitError) ai = null;
       else throw e;
@@ -401,6 +415,26 @@ export async function assembleDay(userId: string, date: string): Promise<{ momen
         confidence_before: Number(bestScore.toFixed(3)),
       });
       questionCount++;
+    }
+
+    // 상황/장소 확인 질문 ('사무실인가요?', '점심 식사 중인가요?' 등) —
+    // 장소가 미확정이거나 확신이 낮을 때 AI 후보 1개 (하루 한도 공유)
+    if (questionCount < MAX_QUESTIONS_PER_DAY) {
+      const qc = (ai?.question_candidates ?? []).find(
+        (x) => x.q && (x.target === "place" || x.target === "activity" || x.target === "people"));
+      const placeUncertain = !place || (ai?.place_match?.confidence ?? 0) < 0.75;
+      if (qc && placeUncertain) {
+        await db().from("moment_questions").insert({
+          moment_id: momentId,
+          user_id: userId,
+          question_text: qc.q.slice(0, 200),
+          options: qc.options?.length ? qc.options.slice(0, 3) : ["맞아요", "아니에요"],
+          target: qc.target,
+          payload: { value: qc.value?.slice(0, 100) ?? null },
+          confidence_before: ai?.place_match?.confidence ?? null,
+        });
+        questionCount++;
+      }
     }
   }
 
