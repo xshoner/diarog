@@ -94,9 +94,14 @@ function HomeInner() {
           {bundle?.diary && <DiaryView diary={bundle.diary} date={date} onChanged={() => load(date)} />}
 
           <section className="space-y-2.5">
-            <h2 className="text-sm font-semibold text-ink-soft px-1">
-              오늘의 순간 {moments.length}개
-            </h2>
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-semibold text-ink-soft">
+                오늘의 순간 {moments.length}개
+              </h2>
+              <Link href={`/ritual/${date}`} className="text-xs text-accent font-semibold">
+                수정·삭제 ›
+              </Link>
+            </div>
             {moments.map((m, i) => (
               <MomentCard key={m.id} moment={m} photos={bundle!.photos} evidence={bundle!.evidence} index={i} />
             ))}

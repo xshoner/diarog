@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
-import type { DayBundle, DiaryEntry, Moment } from "@/lib/types";
+import type { DayBundle, DiaryEntry, Moment, PhotoOut } from "@/lib/types";
 import KakaoMap from "@/components/KakaoMap";
 import MomentCard from "@/components/MomentCard";
 import DiaryView from "@/components/DiaryView";
@@ -123,9 +123,16 @@ export default function RitualPage({ params }: { params: Promise<{ date: string 
       <div className="space-y-3">
         {moments.map((m, i) => (
           <MomentCard key={m.id} moment={m} photos={bundle!.photos} evidence={bundle!.evidence} index={i}
-            onClick={() => m.status === "draft" && setEditingId(editingId === m.id ? null : m.id)}>
+            onClick={() => setEditingId(editingId === m.id ? null : m.id)}>
             {editingId === m.id && (
               <InlineEditor moment={m}
+                photos={(bundle!.photos ?? []).filter((p) => p.moment_id === m.id)}
+                onDeletePhoto={async (pid) => {
+                  if (!confirm("이 사진을 삭제할까요? 되돌릴 수 없어요.")) return;
+                  await api(`/api/photos/${pid}`, { method: "DELETE" });
+                  editCount.current++;
+                  await load();
+                }}
                 onSave={(body) => { patchMoment(m.id, body); setEditingId(null); }}
                 onDelete={async () => {
                   if (!confirm("이 순간을 삭제할까요? 사진은 남고 기록만 사라져요.")) return;
@@ -175,10 +182,12 @@ export default function RitualPage({ params }: { params: Promise<{ date: string 
   );
 }
 
-function InlineEditor({ moment, onSave, onDelete }: {
+function InlineEditor({ moment, photos, onSave, onDelete, onDeletePhoto }: {
   moment: Moment;
+  photos: PhotoOut[];
   onSave: (body: Record<string, unknown>) => void;
   onDelete: () => void;
+  onDeletePhoto: (photoId: string) => void;
 }) {
   const [title, setTitle] = useState(moment.title ?? "");
   const [place, setPlace] = useState(moment.place_name ?? "");
@@ -188,6 +197,27 @@ function InlineEditor({ moment, onSave, onDelete }: {
 
   return (
     <div className="border-t border-line p-3 space-y-2.5 bg-paper/50" onClick={(e) => e.stopPropagation()}>
+      {photos.length > 0 && (
+        <div>
+          <span className="text-xs text-ink-soft">사진 {photos.length}장 (✕를 눌러 삭제)</span>
+          <div className="flex gap-2 mt-1 overflow-x-auto pb-1">
+            {photos.map((p) => (
+              <div key={p.id} className="relative shrink-0">
+                {p.thumbUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.thumbUrl} alt="" className="w-16 h-16 object-cover rounded-lg border border-line" />
+                ) : (
+                  <div className="w-16 h-16 rounded-lg bg-card border border-line flex items-center justify-center">📷</div>
+                )}
+                <button onClick={() => onDeletePhoto(p.id)} aria-label="사진 삭제"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/70 text-white text-[11px] leading-none flex items-center justify-center">
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <label className="block text-xs text-ink-soft">
         제목
         <input value={title} onChange={(e) => setTitle(e.target.value)}

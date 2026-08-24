@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, getDeviceLocation, processPhoto, uploadPhoto } from "@/lib/client";
 
 interface Item {
   name: string;
-  status: "processing" | "uploading" | "done" | "error";
+  status: "processing" | "uploading" | "done" | "duplicate" | "error";
   preview?: string;
   isReceipt: boolean;
 }
@@ -20,6 +20,17 @@ export default function UploadPage() {
   const [receiptMode, setReceiptMode] = useState(false);
   const [doneCount, setDoneCount] = useState(0);
   const [gpsCount, setGpsCount] = useState(0);
+  const [dupCount, setDupCount] = useState(0);
+  const [geoDenied, setGeoDenied] = useState(false);
+
+  useEffect(() => {
+    try {
+      navigator.permissions?.query({ name: "geolocation" as PermissionName }).then((s) => {
+        setGeoDenied(s.state === "denied");
+        s.onchange = () => setGeoDenied(s.state === "denied");
+      }).catch(() => {});
+    } catch { /* 미지원 브라우저 */ }
+  }, []);
 
   async function handleFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -41,7 +52,12 @@ export default function UploadPage() {
       try {
         const processed = await processPhoto(list[i], receiptMode, deviceLoc);
         set({ status: "uploading", preview: URL.createObjectURL(processed.thumb) });
-        await uploadPhoto(processed);
+        const res = await uploadPhoto(processed);
+        if (res.duplicate) {
+          set({ status: "duplicate" });
+          setDupCount((c) => c + 1);
+          continue; // 이미 등록된 사진 — 재조립 불필요
+        }
         set({ status: "done" });
         done++;
         setDoneCount((c) => c + 1);
@@ -78,6 +94,12 @@ export default function UploadPage() {
         <span className="text-xs text-ink-soft">여러 장을 한 번에 선택할 수 있어요</span>
       </button>
 
+      {geoDenied && (
+        <p className="mt-3 px-1 text-xs text-warn">
+          ⚠️ 위치 권한이 꺼져 있어요 — 브라우저 설정에서 위치를 허용하면 오늘 찍은 사진이 지도에 표시돼요
+        </p>
+      )}
+
       <label className="flex items-center gap-2 mt-3 px-1 text-sm text-ink-soft">
         <input type="checkbox" checked={receiptMode} onChange={(e) => setReceiptMode(e.target.checked)}
           className="accent-[var(--color-accent)]" />
@@ -95,7 +117,7 @@ export default function UploadPage() {
                 <div className="w-full h-full flex items-center justify-center text-xl pulse-soft">📷</div>
               )}
               <span className="absolute bottom-1 right-1 text-xs">
-                {it.status === "done" ? "✅" : it.status === "error" ? "⚠️" : (
+                {it.status === "done" ? "✅" : it.status === "duplicate" ? "♻️" : it.status === "error" ? "⚠️" : (
                   <span className="pulse-soft">⏳</span>
                 )}
               </span>
@@ -108,6 +130,12 @@ export default function UploadPage() {
         <p className="text-center text-sm text-accent mt-4 pulse-soft">AI가 순간을 조립하는 중…</p>
       )}
 
+      {dupCount > 0 && !busy && (
+        <p className="text-center text-xs text-ink-soft mt-3">
+          ♻️ 이미 등록된 사진 {dupCount}장은 건너뛰었어요
+        </p>
+      )}
+
       {doneCount > 0 && !busy && gpsCount === 0 && (
         <div className="mt-4 p-3 rounded-xl bg-card border border-line text-xs text-ink-soft leading-relaxed fade-up">
           📍 올린 사진에 위치 정보가 없어 지도·이동 경로를 표시할 수 없어요.
@@ -117,10 +145,10 @@ export default function UploadPage() {
         </div>
       )}
 
-      {doneCount > 0 && !busy && (
+      {(doneCount > 0 || dupCount > 0) && !busy && (
         <button onClick={() => router.push("/")}
           className="w-full mt-5 bg-accent text-white rounded-full py-3.5 font-semibold shadow-lg shadow-accent/25 fade-up">
-          {doneCount}장 업로드 완료 — 오늘 보러 가기
+          {doneCount > 0 ? `${doneCount}장 업로드 완료 — 오늘 보러 가기` : "오늘 보러 가기"}
         </button>
       )}
     </main>

@@ -18,10 +18,17 @@ export async function POST(req: Request) {
 
     const meta = JSON.parse(metaRaw) as {
       takenAt?: string; timeConfidence?: string; lat?: number | null; lng?: number | null;
-      gpsSource?: string; isReceipt?: boolean; exif?: Record<string, unknown>;
+      gpsSource?: string; hash?: string; isReceipt?: boolean; exif?: Record<string, unknown>;
     };
     const takenAt = meta.takenAt && !isNaN(Date.parse(meta.takenAt))
       ? new Date(meta.takenAt) : new Date();
+
+    // 중복 방지: 동일 원본(SHA-256)을 다시 올리면 기존 사진을 반환하고 저장하지 않는다
+    if (typeof meta.hash === "string" && /^[0-9a-f]{64}$/.test(meta.hash)) {
+      const { data: dup } = await db().from("photos").select("id, taken_at")
+        .eq("user_id", userId).eq("exif_raw->>hash", meta.hash).limit(1).maybeSingle();
+      if (dup) return Response.json({ id: dup.id, takenAt: dup.taken_at, duplicate: true });
+    }
 
     await ensurePhotoBucket().catch(() => {});
 
@@ -50,7 +57,7 @@ export async function POST(req: Request) {
       gps_source: hasGps ? (meta.gpsSource === "device" ? "interpolated" : "exif") : "none",
       storage_mid_path: midPath,
       storage_thumb_path: thumbPath,
-      exif_raw: meta.exif ?? null,
+      exif_raw: { ...(meta.exif ?? {}), ...(meta.hash ? { hash: meta.hash } : {}) },
       is_receipt: !!meta.isReceipt,
     }).select("id").single();
     if (error || !row) return Response.json({ error: error?.message }, { status: 500 });

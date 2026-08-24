@@ -44,6 +44,11 @@ export default function MomentCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="text-xs text-ink-soft tabular-nums">{timeLabel(moment.starts_at)}</span>
+            {moment.weather?.temp != null && (
+              <span className="text-[11px] text-ink-soft">
+                🌡 {moment.weather.temp}℃{moment.weather.precip && moment.weather.precip !== "없음" ? ` ${moment.weather.precip}` : ""}
+              </span>
+            )}
             {moment.status === "soft_confirmed" && (
               <span className="text-[10px] text-warn border border-warn/40 rounded-full px-1.5">미확인</span>
             )}
@@ -52,9 +57,17 @@ export default function MomentCard({
           <h3 className="font-semibold text-[15px] leading-snug mt-0.5 truncate">{moment.title ?? "제목 없음"}</h3>
           {(moment.place_name || moment.address) && (
             <p className="text-xs text-ink-soft mt-0.5 truncate">
-              {moment.place_name ?? moment.address}
+              📍 {moment.place_name ?? moment.address}
               {moment.people?.length > 0 && ` · ${moment.people.map((p) => p.name).join(", ")}`}
             </p>
+          )}
+          {moment.ai?.scene_summary && (
+            <p className="text-xs text-ink-soft/90 mt-1 leading-relaxed line-clamp-2">
+              {moment.ai.scene_summary}
+            </p>
+          )}
+          {moment.memo && (
+            <p className="text-xs text-ink mt-1 line-clamp-1">✏️ {moment.memo}</p>
           )}
           <div className="mt-1.5">
             <EvidenceBadges moment={moment} evidence={evidence} />

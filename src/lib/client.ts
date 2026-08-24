@@ -23,6 +23,7 @@ export interface ProcessedPhoto {
     lat: number | null;
     lng: number | null;
     gpsSource: "exif" | "device" | null;
+    hash: string | null;
     isReceipt: boolean;
     exif: Record<string, unknown>;
   };
@@ -97,11 +98,18 @@ export async function processPhoto(
     gpsSource = "device";
   }
 
+  // 원본 파일 SHA-256 — 동일 사진 재업로드 중복 방지 키
+  let hash: string | null = null;
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch { /* http 환경 등 subtle 미지원 시 중복 검사 생략 */ }
+
   const mid = await resize(bitmap, 1024);
   const thumb = await resize(bitmap, 320);
   bitmap.close();
 
-  return { mid, thumb, meta: { takenAt, timeConfidence, lat, lng, gpsSource, isReceipt, exif } };
+  return { mid, thumb, meta: { takenAt, timeConfidence, lat, lng, gpsSource, hash, isReceipt, exif } };
 }
 
 async function resize(bitmap: ImageBitmap, maxDim: number): Promise<Blob> {
@@ -118,7 +126,7 @@ async function resize(bitmap: ImageBitmap, maxDim: number): Promise<Blob> {
   );
 }
 
-export async function uploadPhoto(p: ProcessedPhoto): Promise<{ id: string }> {
+export async function uploadPhoto(p: ProcessedPhoto): Promise<{ id: string; duplicate?: boolean }> {
   const form = new FormData();
   form.append("mid", p.mid, "mid.jpg");
   form.append("thumb", p.thumb, "thumb.jpg");
