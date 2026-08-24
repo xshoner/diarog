@@ -20,7 +20,9 @@ export async function GET(req: NextRequest) {
   }
 
   const today = kstDateString();
-  const kstHour = new Date(Date.now() + 9 * 3600_000).getUTCHours();
+  const kstNow = new Date(Date.now() + 9 * 3600_000);
+  const kstHour = kstNow.getUTCHours();
+  const nowMin = kstHour * 60 + kstNow.getUTCMinutes();
   const results = { pushed: 0, assembled: 0, softConfirmed: 0, lightNudge: 0, skipped: 0 };
 
   // 3일 경과 draft → soft_confirmed (멱등 — 매 실행 무해)
@@ -36,12 +38,15 @@ export async function GET(req: NextRequest) {
 
   for (const u of users ?? []) {
     try {
-      // 사용자 설정 시각(ritual_time)의 '시'에만 발송. 21시는 캐치업 시간
-      // (pg_cron 미가동 등으로 오늘 아무 알림도 못 받은 사용자 보장).
-      const ritualHour = Number(String(u.ritual_time ?? "21:00").slice(0, 2));
-      const isUsersHour = Number.isFinite(ritualHour) && ritualHour === kstHour;
+      // 사용자 설정 시각(ritual_time)을 지난 뒤 첫 실행(60분 이내)에 발송.
+      // 예: 14:55 설정 + 매시 5분 크론 → 15:05 실행에서 발송 (14:05 조기 발송 방지).
+      // 21시는 캐치업 시간 (pg_cron 미가동 등으로 오늘 아무 알림도 못 받은 사용자 보장).
+      const rt = String(u.ritual_time ?? "21:00");
+      const ritualMin = Number(rt.slice(0, 2)) * 60 + (Number(rt.slice(3, 5)) || 0);
+      const sinceRitual = nowMin - ritualMin;
+      const isUsersWindow = Number.isFinite(ritualMin) && sinceRitual >= 0 && sinceRitual < 60;
       const isCatchUp = kstHour === 21;
-      if (!isUsersHour && !isCatchUp) { results.skipped++; continue; }
+      if (!isUsersWindow && !isCatchUp) { results.skipped++; continue; }
 
       // 오늘 이미 알림을 보냈으면 중복 발송 방지 (시간별 + 일일 크론 공존 대비)
       const { count: sentToday } = await db().from("analytics_events")
