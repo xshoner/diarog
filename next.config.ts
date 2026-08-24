@@ -33,6 +33,8 @@ const nextConfig: NextConfig = {
       process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY ?? "ff4036aee9eefccc9fc989155567d3e0",
     NEXT_PUBLIC_VAPID_PUBLIC_KEY:
       process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? derivedVapidPublic(),
+    // 빌드 시점의 커밋 SHA — 스테일 번들 감지(UpdateNotice)용
+    NEXT_PUBLIC_BUILD_SHA: process.env.VERCEL_GIT_COMMIT_SHA ?? "dev",
   },
 };
 
