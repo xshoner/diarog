@@ -53,9 +53,8 @@ export async function getDeviceLocation(): Promise<{ lat: number; lng: number } 
   return (await requestDeviceLocation()).loc;
 }
 
-// 현재 위치 폴백은 "방금 찍은" 사진에만 (그보다 오래된 사진은 다른 장소일 가능성 —
-// 실제로 오전에 다른 도시에서 찍은 사진에 현재 위치가 붙는 오류가 있었음)
-const DEVICE_GPS_WINDOW_MS = 90 * 60 * 1000;
+// 위치 EXIF가 제거된 사진은 사용자가 업로드 시 허용한 현재 위치를 폴백으로 사용한다.
+// 촬영 시점 제한은 두지 않는다. 실제 촬영 위치와 다를 수 있으므로 gpsSource=device로 명시한다.
 
 /** 파일 → EXIF 추출(다운스케일 전, FR-2.2) + 1024px/320px 리사이즈 (FR-2.1) */
 export async function processPhoto(
@@ -108,16 +107,13 @@ export async function processPhoto(
     }
   });
 
-  // EXIF에 GPS가 없으면(포토 피커의 위치 제거 등) 최근 90분 내 촬영분에만 현재 기기 위치로 대체.
-  // 그보다 오래된 사진은 순간 카드에서 장소를 입력하면 좌표가 채워진다.
+  // EXIF에 GPS가 없으면 업로드 시점의 기기 위치를 사용한다.
+  // 과거 사진도 등록 가능하도록 시간 제한은 두지 않으며, 출처는 device로 보존한다.
   if (lat == null && deviceLoc) {
-    if (Math.abs(Date.now() - Date.parse(takenAt)) <= DEVICE_GPS_WINDOW_MS) {
-      lat = deviceLoc.lat;
-      lng = deviceLoc.lng;
-      gpsSource = "device";
-    } else {
-      exif.geoSkip = "not_recent"; // 방금 찍은 사진이 아니라 현재 위치를 붙이지 않음
-    }
+    lat = deviceLoc.lat;
+    lng = deviceLoc.lng;
+    gpsSource = "device";
+    exif.geoFallback = "device_location_at_upload";
   }
 
   // 원본 파일 SHA-256 — 동일 사진 재업로드 중복 방지 키
@@ -148,7 +144,7 @@ async function resize(bitmap: ImageBitmap, maxDim: number): Promise<Blob> {
   );
 }
 
-export async function uploadPhoto(p: ProcessedPhoto): Promise<{ id: string; duplicate?: boolean }> {
+export async function uploadPhoto(p: ProcessedPhoto): Promise<{ id: string; takenAt?: string; duplicate?: boolean }> {
   const form = new FormData();
   form.append("mid", p.mid, "mid.jpg");
   form.append("thumb", p.thumb, "thumb.jpg");
