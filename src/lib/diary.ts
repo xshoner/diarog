@@ -3,6 +3,7 @@ import { chatJSON, ChatMessage, embed } from "./letsur";
 import { personaSystemPrompt } from "./personas";
 import { kstTime } from "./time";
 import { weatherText, Weather } from "./kma";
+import { recentPersonalMemories } from "./memory";
 
 // Call-2: 하루 일기 생성 (§8.3) + 검색 인덱스 갱신
 
@@ -35,6 +36,7 @@ export async function generateDiary(userId: string, date: string): Promise<{ sen
   const { data: profile } = await db().from("users_profile")
     .select("persona_type").eq("user_id", userId).single();
   const personaType = profile?.persona_type ?? "plain";
+  const longTermMemories = await recentPersonalMemories(userId, 12).catch(() => []);
 
   const { data: momentRows } = await db().from("moments")
     .select("id, title, starts_at, place_name, address, people, mood, memo, weather, ai, linked_event_id")
@@ -94,6 +96,11 @@ export async function generateDiary(userId: string, date: string): Promise<{ sen
       "사용자의 문체 교정 이력 (원문 → 사용자가 고친 문장). 수정 방향에서 어미·문장 길이·어투·자주 쓰는 표현을 파악해,",
       "고쳐질 문장을 쓰지 말고 처음부터 사용자가 고친 쪽의 문체로 써라:",
       ...fewShot.map((e) => `- 원문: ${e.original}\n  수정: ${e.revised}`),
+    ].join("\n") : "",
+    longTermMemories.length > 0 ? [
+      "",
+      "사용자의 장기 기억(취향·루틴·관계·목표). 오늘 기록과 관련 있을 때만 자연스럽게 참고하고, 기억만으로 새로운 사건을 만들어내지 말 것:",
+      ...longTermMemories.map((m) => `- [${m.kind}, 신뢰 ${Number(m.confidence).toFixed(2)}] ${m.content}`),
     ].join("\n") : "",
     styleExemplars.length > 0 ? [
       "",
