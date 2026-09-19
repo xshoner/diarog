@@ -83,10 +83,30 @@ export default function UploadPage() {
     }
 
     if (done > 0) {
-      // 업로드 후 당일 재조립 (디바운스 대신 완료 후 1회)
+      // 업로드된 각 사진의 촬영일 기준으로 재조립한다.
+      // 과거 사진도 언제든 해당 날짜의 일기로 자동 반영되도록 오늘 날짜에 한정하지 않는다.
       setAssembling(true);
-      try { await api("/api/moments/assemble", { method: "POST", body: JSON.stringify({}) }); } catch { }
-      setAssembling(false);
+      try {
+        const dates = new Set<string>();
+        for (const it of list) {
+          try {
+            const exifr = (await import("exifr")).default;
+            const parsed = await exifr.parse(it, { pick: ["DateTimeOriginal", "CreateDate"] });
+            const dt: Date | undefined = parsed?.DateTimeOriginal ?? parsed?.CreateDate;
+            const iso = dt instanceof Date && !isNaN(dt.getTime())
+              ? dt.toISOString()
+              : new Date(it.lastModified).toISOString();
+            dates.add(iso.slice(0, 10));
+          } catch {
+            dates.add(new Date(it.lastModified).toISOString().slice(0, 10));
+          }
+        }
+        for (const date of dates) {
+          await api("/api/moments/assemble", { method: "POST", body: JSON.stringify({ date }) }).catch(() => {});
+        }
+      } finally {
+        setAssembling(false);
+      }
     }
   }
 
@@ -178,10 +198,7 @@ export default function UploadPage() {
 
       {doneCount > 0 && !busy && gpsCount === 0 && (
         <div className="mt-2 p-3 rounded-xl bg-card border border-line text-xs text-ink-soft leading-relaxed fade-up">
-          📍 위치가 기록되지 않았어요. 현재 위치는 <b>최근 90분 내 찍은 사진에만</b> 채워져요
-          (그 전 사진은 다른 장소일 수 있어서요). 예전 사진은 홈에서 순간 카드를 탭해
-          <b>장소를 입력</b>하면 지도 위치가 채워지고, 원본 위치를 살리려면 선택 화면에서
-          <b>찾아보기/파일 앱</b> 경로로 골라 주세요.
+          📍 위치가 기록되지 않았어요. EXIF 위치가 없으면 업로드 시점의 현재 위치를 사용할 수 있어요.\n          과거 사진도 촬영일 기준으로 해당 날짜의 일기에 자동 반영됩니다.
         </div>
       )}
 
