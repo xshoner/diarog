@@ -17,6 +17,7 @@ interface Review {
     planVsLived?: { 예정: number; 진행: number; 계획에없던사건: number } | null;
   };
   opened_at: string | null;
+  coverThumbUrl?: string | null;
 }
 
 function weekLabel(ws: string): string {
@@ -70,15 +71,23 @@ export default function WeeklyPage() {
       <div className="space-y-3">
         {reviews?.map((r) => (
           <div key={r.id} className="bg-card border border-line rounded-2xl overflow-hidden fade-up">
-            <button onClick={() => open(r)} className="w-full flex items-center justify-between p-4">
-              <div className="text-left">
+            <button onClick={() => open(r)} className="w-full flex items-center justify-between p-4 gap-3">
+              <div className="flex items-center gap-3 min-w-0 text-left">
+                {r.coverThumbUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={r.coverThumbUrl} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0 border border-line" />
+                ) : (
+                  <div className="w-16 h-16 rounded-xl bg-paper border border-line flex items-center justify-center text-2xl shrink-0">🗓️</div>
+                )}
+                <div className="min-w-0">
                 <p className="font-bold">{weekLabel(r.week_start)}</p>
                 <p className="text-xs text-ink-soft mt-0.5">
                   순간 {r.stats.momentCount ?? 0}개 · 장소 {r.stats.placeCount ?? 0}곳
                   {(r.stats.people?.length ?? 0) > 0 && ` · ${r.stats.people!.slice(0, 3).join(", ")}`}
                 </p>
+                </div>
               </div>
-              <span className="text-ink-soft">{openId === r.id ? "▲" : "▼"}</span>
+              <span className="text-ink-soft shrink-0">{openId === r.id ? "▲" : "▼"}</span>
             </button>
             {openId === r.id && (
               <div className="px-4 pb-4 space-y-3">
