@@ -92,8 +92,17 @@ export default function UploadPage() {
       // 과거 사진도 언제든 해당 날짜의 일기로 자동 반영되도록 오늘 날짜에 한정하지 않는다.
       setAssembling(true);
       try {
+        const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
         for (const date of uploadedDates) {
           await api("/api/moments/assemble", { method: "POST", body: JSON.stringify({ date }) }).catch(() => {});
+          // 지난 날짜에 사진을 뒤늦게 추가한 경우에는 새 Moment를 자동 확정하고
+          // 일기 본문까지 재생성해 "나중에 올려도 기록이 완성되는" 경험을 제공한다.
+          if (date < today) {
+            await api(`/api/days/${date}/confirm`, {
+              method: "POST",
+              body: JSON.stringify({ zeroEntry: true, source: "historical_photo_upload" }),
+            }).catch(() => {});
+          }
         }
       } finally {
         setAssembling(false);
