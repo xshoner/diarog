@@ -1,6 +1,7 @@
 import { requireUser, UnauthorizedError, unauthorizedResponse } from "@/lib/session";
 import { db } from "@/lib/supabase";
 import { generateDiary, indexMoments } from "@/lib/diary";
+import { refreshPersonalMemories } from "@/lib/memory";
 
 export const maxDuration = 300;
 
@@ -41,8 +42,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
       edited: false,
     }, { onConflict: "user_id,date" });
 
-    // 검색 인덱스 (비동기 실패 허용)
+    // 검색 인덱스 + 장기 기억 갱신 (실패해도 일기 확정은 유지)
     await indexMoments(userId, date).catch(() => {});
+    await refreshPersonalMemories(userId, date).catch(() => {});
 
     await db().from("analytics_events").insert({
       user_id: userId,
