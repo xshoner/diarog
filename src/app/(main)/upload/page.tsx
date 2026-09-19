@@ -55,6 +55,7 @@ export default function UploadPage() {
     const deviceLoc = geoRes.loc;
 
     let done = 0;
+    const uploadedDates = new Set<string>();
     for (let i = 0; i < list.length; i++) {
       const idx = startIdx + i;
       const set = (patch: Partial<Item>) =>
@@ -75,6 +76,10 @@ export default function UploadPage() {
         }
         set({ status: "done" });
         done++;
+        if (res.takenAt) {
+          const kst = new Date(new Date(res.takenAt).getTime() + 9 * 3600_000).toISOString().slice(0, 10);
+          uploadedDates.add(kst);
+        }
         setDoneCount((c) => c + 1);
         if (hasGps) setGpsCount((c) => c + 1);
       } catch {
@@ -87,21 +92,7 @@ export default function UploadPage() {
       // 과거 사진도 언제든 해당 날짜의 일기로 자동 반영되도록 오늘 날짜에 한정하지 않는다.
       setAssembling(true);
       try {
-        const dates = new Set<string>();
-        for (const it of list) {
-          try {
-            const exifr = (await import("exifr")).default;
-            const parsed = await exifr.parse(it, { pick: ["DateTimeOriginal", "CreateDate"] });
-            const dt: Date | undefined = parsed?.DateTimeOriginal ?? parsed?.CreateDate;
-            const iso = dt instanceof Date && !isNaN(dt.getTime())
-              ? dt.toISOString()
-              : new Date(it.lastModified).toISOString();
-            dates.add(iso.slice(0, 10));
-          } catch {
-            dates.add(new Date(it.lastModified).toISOString().slice(0, 10));
-          }
-        }
-        for (const date of dates) {
+        for (const date of uploadedDates) {
           await api("/api/moments/assemble", { method: "POST", body: JSON.stringify({ date }) }).catch(() => {});
         }
       } finally {
@@ -198,7 +189,7 @@ export default function UploadPage() {
 
       {doneCount > 0 && !busy && gpsCount === 0 && (
         <div className="mt-2 p-3 rounded-xl bg-card border border-line text-xs text-ink-soft leading-relaxed fade-up">
-          📍 위치가 기록되지 않았어요. EXIF 위치가 없으면 업로드 시점의 현재 위치를 사용할 수 있어요.\n          과거 사진도 촬영일 기준으로 해당 날짜의 일기에 자동 반영됩니다.
+          📍 위치 정보가 없는 사진도 등록할 수 있어요. 과거 사진은 촬영일 기준으로 해당 날짜의 일기에 자동 반영되고,\n          EXIF 위치가 있으면 지도에도 함께 기록됩니다. 위치가 없는 과거 사진에는 현재 위치를 잘못 붙이지 않아요.
         </div>
       )}
 
