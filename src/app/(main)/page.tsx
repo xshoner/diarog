@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/client";
@@ -30,6 +30,7 @@ function HomeInner() {
     initial && /^\d{4}-\d{2}-\d{2}$/.test(initial) ? initial : todayKst());
   const [bundle, setBundle] = useState<DayBundle | null>(null);
   const [loading, setLoading] = useState(true);
+  const swipeStartX = useRef<number | null>(null);
   const isToday = date === todayKst();
 
   const load = useCallback(async (d: string) => {
@@ -44,22 +45,40 @@ function HomeInner() {
 
   useEffect(() => { load(date); }, [date, load]);
 
+  function moveDay(delta: number) {
+    const next = shift(date, delta);
+    if (next > todayKst()) return;
+    setDate(next);
+    router.replace(next === todayKst() ? "/" : `/?date=${next}`, { scroll: false });
+  }
+
   const moments = bundle?.moments ?? [];
   const drafts = moments.filter((m) => m.status === "draft");
 
   return (
-    <main className="px-4 pt-4">
+    <main
+      className="px-4 pt-4 touch-pan-y"
+      onTouchStart={(e) => { swipeStartX.current = e.touches[0]?.clientX ?? null; }}
+      onTouchEnd={(e) => {
+        if (swipeStartX.current == null) return;
+        const dx = (e.changedTouches[0]?.clientX ?? swipeStartX.current) - swipeStartX.current;
+        swipeStartX.current = null;
+        if (Math.abs(dx) < 55) return;
+        // 손가락을 오른쪽으로 밀면 이전 날, 왼쪽으로 밀면 다음 날
+        moveDay(dx > 0 ? -1 : 1);
+      }}
+    >
       {/* 날짜 네비게이션 (FR-6.2) */}
       <header className="flex items-center justify-between mb-3">
-        <button onClick={() => setDate(shift(date, -1))} aria-label="이전 날"
+        <button onClick={() => moveDay(-1)} aria-label="이전 날"
           className="w-9 h-9 rounded-full bg-card border border-line text-ink-soft active:scale-95">←</button>
         <div className="text-center">
           <h1 className="font-bold text-lg">{dateLabel(date)}</h1>
           {!isToday && (
-            <button onClick={() => setDate(todayKst())} className="text-[11px] text-accent">오늘로</button>
+            <button onClick={() => { setDate(todayKst()); router.replace("/", { scroll: false }); }} className="text-[11px] text-accent">오늘로</button>
           )}
         </div>
-        <button onClick={() => setDate(shift(date, 1))} disabled={isToday} aria-label="다음 날"
+        <button onClick={() => moveDay(1)} disabled={isToday} aria-label="다음 날"
           className="w-9 h-9 rounded-full bg-card border border-line text-ink-soft active:scale-95 disabled:opacity-30">→</button>
       </header>
 
