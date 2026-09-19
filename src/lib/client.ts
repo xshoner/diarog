@@ -53,8 +53,8 @@ export async function getDeviceLocation(): Promise<{ lat: number; lng: number } 
   return (await requestDeviceLocation()).loc;
 }
 
-// 위치 EXIF가 제거된 사진은 사용자가 업로드 시 허용한 현재 위치를 폴백으로 사용한다.
-// 촬영 시점 제한은 두지 않는다. 실제 촬영 위치와 다를 수 있으므로 gpsSource=device로 명시한다.
+// EXIF가 제거된 최근 사진에 한해 현재 기기 위치를 폴백으로 사용한다.
+const DEVICE_GPS_WINDOW_MS = 90 * 60 * 1000;
 
 /** 파일 → EXIF 추출(다운스케일 전, FR-2.2) + 1024px/320px 리사이즈 (FR-2.1) */
 export async function processPhoto(
@@ -107,13 +107,13 @@ export async function processPhoto(
     }
   });
 
-  // EXIF에 GPS가 없으면 업로드 시점의 기기 위치를 사용한다.
-  // 과거 사진도 등록 가능하도록 시간 제한은 두지 않으며, 출처는 device로 보존한다.
-  if (lat == null && deviceLoc) {
+  // 오래된 사진에 현재 위치를 잘못 붙이지 않는다. 과거 사진은 EXIF GPS가 있으면 그대로 사용하고,
+  // 없으면 위치 미확정 상태로 등록한 뒤 일정/사용자 장소 수정 등 다른 근거로 보완한다.
+  if (lat == null && deviceLoc && Math.abs(Date.now() - Date.parse(takenAt)) <= DEVICE_GPS_WINDOW_MS) {
     lat = deviceLoc.lat;
     lng = deviceLoc.lng;
     gpsSource = "device";
-    exif.geoFallback = "device_location_at_upload";
+    exif.geoFallback = "recent_device_location";
   }
 
   // 원본 파일 SHA-256 — 동일 사진 재업로드 중복 방지 키
