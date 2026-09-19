@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { api, requestDeviceLocation, subscribePush } from "@/lib/client";
 import type { Me } from "@/lib/types";
 
@@ -130,6 +131,10 @@ export default function SettingsPage() {
       </header>
 
       <section className="bg-card border border-line rounded-2xl divide-y divide-line">
+        <Link href="/companion" className="block p-4">
+          <p className="text-sm font-semibold">Android Companion →</p>
+          <p className="text-[11px] text-ink-soft">통화 요약 · 걸음 수 · 위치 기록 연결</p>
+        </Link>
         <div className="p-4">
           <p className="text-sm font-semibold mb-2">나의 페르소나</p>
           <div className="grid grid-cols-2 gap-2">

@@ -1,0 +1,41 @@
+name: Companion checks
+on:
+  push:
+    branches: [main, feature/personal-context-agent]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:companion
+      - run: npm run build
+      - run: npm run lint
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+      - run: bash ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+        working-directory: android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diarog-companion-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

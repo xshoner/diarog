@@ -87,7 +87,7 @@ function HomeInner() {
           <div className="h-56 rounded-2xl bg-card border border-line pulse-soft" />
           <div className="h-24 rounded-2xl bg-card border border-line pulse-soft" />
         </div>
-      ) : moments.length === 0 ? (
+      ) : moments.length === 0 && !bundle?.diary ? (
         <div className="text-center py-16 fade-up">
           <p className="text-4xl mb-3">🌿</p>
           <p className="font-semibold">아직 기록이 없어요</p>
@@ -97,6 +97,7 @@ function HomeInner() {
           <Link href="/upload" className="inline-block bg-accent text-white rounded-full px-6 py-2.5 text-sm font-semibold shadow-lg shadow-accent/25">
             사진 추가하기
           </Link>
+          <Link href="/companion" className="block mt-4 text-sm text-accent">Companion 수집 기록으로 일기 쓰기</Link>
         </div>
       ) : (
         <div className="space-y-4">

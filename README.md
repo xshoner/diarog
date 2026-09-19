@@ -2,6 +2,8 @@
 
 > 기록하지 않아도 기록되는 삶.
 
+Android Companion 앱(STT·통화녹음 파일 수집·Health Connect·위치)의 빌드/설치/서버 연동 안내는 [android/README.md](android/README.md)를 참고하세요.
+
 사진을 찍기만 하면, AI가 위치·일정·날씨·장소의 증거를 엮어 하루를 **Moment(사건)** 단위로
 자동 조립하고, 밤 9시 사용자의 30초 확인으로 확정되는 **나의 페르소나가 써주는 프라이빗 AI 라이프로그**.
 

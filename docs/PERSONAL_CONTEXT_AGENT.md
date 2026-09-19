@@ -1,5 +1,7 @@
 # diarog Personal Context Agent — 개발 방향
 
+> Android Companion의 구현/설치/현재 제한은 [android/README.md](../android/README.md)를 참고한다. 아래 후속 설계 중 통화녹음 폴더 수집·기기 내 STT·Health Connect 집계·사용자 시작형 위치 수집을 구현했다. 실제 앱은 원본 음성을 업로드하지 않고 전사문을 서버에서 요약하며, 위치는 현재 좌표 샘플 방식이다. Gmail·체류 위치 압축·Memory Center는 후속 작업이다.
+
 ## 제품 정의
 diarog를 "일기를 쓰는 앱"이 아니라, 사용자의 하루에서 증거를 자동 수집하고 장기 기억을 축적해 시간이 지날수록 사용자를 더 잘 이해하는 프라이빗 Personal Context Agent로 확장한다.
 

@@ -2,6 +2,7 @@ import { requireUser, UnauthorizedError, unauthorizedResponse } from "@/lib/sess
 import { db } from "@/lib/supabase";
 import { generateDiary, indexMoments } from "@/lib/diary";
 import { refreshPersonalMemories } from "@/lib/memory";
+import { kstDayRange } from "@/lib/time";
 
 export const maxDuration = 300;
 
@@ -10,6 +11,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
   try {
     const { profile } = await requireUser();
     const { date } = await ctx.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) return Response.json({ error: "invalid date" }, { status: 400 });
     const userId = profile.user_id;
     const body = await req.json().catch(() => ({}));
     const startedAt = Date.now();
@@ -26,11 +28,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
     const { count: confirmedCount } = await db().from("moments")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId).eq("date", date).in("status", ["confirmed", "soft_confirmed"]);
-    if (!confirmedCount) return Response.json({ error: "no moments" }, { status: 400 });
+    if (!confirmedCount) {
+      const range = kstDayRange(date);
+      const { count, error } = await db().from("life_signals").select("id", { count: "exact", head: true })
+        .eq("user_id", userId).gte("occurred_at", range.start.toISOString()).lt("occurred_at", range.end.toISOString());
+      if (error) throw error;
+      if (!count) return Response.json({ error: "no moments or signals" }, { status: 400 });
+    }
 
     // Call-2 일기 생성
     const diary = await generateDiary(userId, date);
-    await db().from("diary_entries").upsert({
+    const { error: saveError } = await db().from("diary_entries").upsert({
       user_id: userId,
       date,
       body_generated: diary.body,
@@ -41,6 +49,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
       few_shot_count: diary.fewShotCount,
       edited: false,
     }, { onConflict: "user_id,date" });
+    if (saveError) throw saveError;
 
     // 검색 인덱스 + 장기 기억 갱신 (실패해도 일기 확정은 유지)
     await indexMoments(userId, date).catch(() => {});

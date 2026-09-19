@@ -1,61 +1,46 @@
-import { requireUser, UnauthorizedError, unauthorizedResponse } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { db } from "@/lib/supabase";
-
-const SOURCES = new Set(["audio","email","steps","location","calendar","photo","manual","device"]);
+import { companionError, sameOrigin } from "@/lib/companion";
+import { InputError, object, readJsonLimited, signalRows } from "@/lib/signal-validation";
 
 export async function POST(req: Request) {
   try {
-    const { profile } = await requireUser();
-    const body = await req.json();
-    const items = Array.isArray(body?.signals) ? body.signals : [body];
-    const rows = items.slice(0, 200).flatMap((s: Record<string, unknown>) => {
-      const source = typeof s.source === "string" ? s.source : "";
-      const occurredAt = typeof s.occurredAt === "string" ? s.occurredAt : "";
-      if (!SOURCES.has(source) || !occurredAt || isNaN(Date.parse(occurredAt))) return [];
-      return [{
-        user_id: profile.user_id,
-        source,
-        occurred_at: new Date(occurredAt).toISOString(),
-        ended_at: typeof s.endedAt === "string" && !isNaN(Date.parse(s.endedAt)) ? new Date(s.endedAt).toISOString() : null,
-        title: typeof s.title === "string" ? s.title.slice(0, 300) : null,
-        summary: typeof s.summary === "string" ? s.summary.slice(0, 8000) : null,
-        payload: s.payload && typeof s.payload === "object" ? s.payload : {},
-        external_id: typeof s.externalId === "string" ? s.externalId.slice(0, 500) : null,
-      }];
-    });
-    if (!rows.length) return Response.json({ error: "no valid signals" }, { status: 400 });
-
-    for (const row of rows) {
-      if (row.external_id) {
-        await db().from("life_signals").upsert(row, { onConflict: "user_id,source,external_id" });
-      } else {
-        await db().from("life_signals").insert(row);
-      }
-    }
+    sameOrigin(req);
+    const { session } = await requireUser();
+    const rows = signalRows(await readJsonLimited(req), session.userId);
+    const { error } = await db().from("life_signals").upsert(rows, { onConflict: "user_id,source,external_id" });
+    if (error) throw error;
     return Response.json({ ok: true, count: rows.length });
-  } catch (e) {
-    if (e instanceof UnauthorizedError) return unauthorizedResponse();
-    return Response.json({ error: String(e) }, { status: 500 });
-  }
+  } catch (e) { return companionError(e); }
 }
 
 export async function GET(req: Request) {
   try {
-    const { profile } = await requireUser();
+    const { session } = await requireUser();
     const url = new URL(req.url);
-    const from = url.searchParams.get("from");
-    const to = url.searchParams.get("to");
     let q = db().from("life_signals")
-      .select("id, source, occurred_at, ended_at, title, summary, payload, external_id")
-      .eq("user_id", profile.user_id)
-      .order("occurred_at", { ascending: false })
-      .limit(500);
-    if (from && !isNaN(Date.parse(from))) q = q.gte("occurred_at", new Date(from).toISOString());
-    if (to && !isNaN(Date.parse(to))) q = q.lt("occurred_at", new Date(to).toISOString());
-    const { data } = await q;
-    return Response.json({ signals: data ?? [] });
-  } catch (e) {
-    if (e instanceof UnauthorizedError) return unauthorizedResponse();
-    return Response.json({ error: String(e) }, { status: 500 });
-  }
+      .select("id,source,occurred_at,ended_at,title,summary,payload,external_id")
+      .eq("user_id", session.userId).order("occurred_at", { ascending: false }).limit(500);
+    for (const key of ["from", "to"]) {
+      const value = url.searchParams.get(key);
+      if (!value) continue;
+      if (!Number.isFinite(Date.parse(value))) throw new InputError("invalid date range");
+      q = key === "from" ? q.gte("occurred_at", new Date(value).toISOString()) : q.lt("occurred_at", new Date(value).toISOString());
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+    return Response.json({ signals: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
+  } catch (e) { return companionError(e); }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    sameOrigin(req);
+    const { session } = await requireUser();
+    const body = object(await readJsonLimited(req, 1024));
+    if (typeof body.id !== "string" || !/^[\da-f-]{36}$/i.test(body.id)) throw new InputError("invalid id");
+    const { error } = await db().from("life_signals").delete().eq("user_id", session.userId).eq("id", body.id);
+    if (error) throw error;
+    return Response.json({ ok: true });
+  } catch (e) { return companionError(e); }
 }
