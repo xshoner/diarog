@@ -148,6 +148,7 @@ export default function SettingsPage() {
             ))}
           </div>
           <p className="text-[11px] text-ink-soft mt-2">일기를 고칠 때마다 AI가 당신의 문체를 배워요</p>
+          <Link href="/persona" className="text-sm text-accent block mt-2">개인화 근거와 기억 확인 →</Link>
         </div>
 
         <div className="p-4 flex items-center justify-between">

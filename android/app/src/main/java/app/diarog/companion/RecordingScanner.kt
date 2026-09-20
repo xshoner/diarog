@@ -16,8 +16,9 @@ class RecordingScanner(private val context: Context) {
         // Remove a private decoding copy left behind by process termination.
         File(context.cacheDir, "call-input.tmp").delete()
         val settings = Settings(context)
+        val diagnostics = Diagnostics(context)
         if(!settings.audio || settings.folder.isEmpty()) return
-        if(!SpeechModel.ready(context)) { settings.status = "통화 수집 대기: 한국어 모델을 먼저 다운로드해 주세요."; return }
+        if(!SpeechModel.ready(context)) { diagnostics.record("audio", "통화 수집 대기: 한국어 모델 설치 필요"); return }
         val root = DocumentFile.fromTreeUri(context, Uri.parse(settings.folder)) ?: error("녹음 폴더를 다시 선택해 주세요.")
         check(root.canRead()) { "녹음 폴더 접근 권한이 만료되었습니다." }
         val candidates = mutableListOf<DocumentFile>()
@@ -31,6 +32,7 @@ class RecordingScanner(private val context: Context) {
             }
         }
         scan(root, 0)
+        diagnostics.record("audio", "폴더 검사 완료 · 오디오 ${candidates.size}개 · 처리할 새 녹음 탐색 중")
         for(file in candidates.sortedByDescending { it.lastModified() }) {
             coroutineContext.ensureActive()
             val modified = file.lastModified(); val size = file.length()
@@ -53,6 +55,7 @@ class RecordingScanner(private val context: Context) {
                     check(total == size && file.length() == size && file.lastModified() == modified) { "녹음 파일 저장 중" }
                 } }
                 settings.status = "휴대폰에서 녹음을 글로 변환 중…"
+                diagnostics.record("audio", "기기에서 음성을 글로 변환 중…")
                 val transcript = LocalTranscriber(context).transcribe(temp)
                 if (!settings.enabled || !settings.audio) return
                 val parsed = AudioMath.recordingStart(file.name ?: "", ZoneId.systemDefault())
@@ -63,12 +66,14 @@ class RecordingScanner(private val context: Context) {
                     .put("timingSource", if(parsed != null) "filename" else "file_modified").put("transcript", transcript.text)
                 queue.enqueue(externalId, "audio", body.toString())
                 queue.markRecording(key, true)
+                diagnostics.record("audio", "전사 완료 · ${transcript.text.length}자 · 서버 요약 전송 대기")
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (_: Exception) { queue.markRecording(key, false); settings.status = "일부 녹음 변환 실패. 지원 형식·1시간/250MB 제한을 확인해 주세요." }
+            catch (e: Exception) { queue.markRecording(key, false); diagnostics.record("audio", "전사 실패 (${e.javaClass.simpleName}). 지원 형식·1시간/250MB 제한 확인 후 실패 기록 재시도") }
             finally { temp.delete() }
             // One recording per run keeps background work within Android's execution window.
             return
         }
+        diagnostics.record("audio", "오디오 ${candidates.size}개 확인 · 새 처리 대상 없음 (과거 녹음 선택/저장 후 2분/이미 처리한 파일 확인)")
     }
     private fun digest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 }

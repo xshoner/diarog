@@ -21,7 +21,16 @@ export async function requireDevice(req: Request) {
 }
 
 export function sameOrigin(req: Request) {
-  if (req.headers.get("origin") !== new URL(req.url).origin) throw new InputError("same-origin request required", 403);
+  const raw = req.headers.get("origin");
+  let origin: URL;
+  try { origin = new URL(raw ?? ""); } catch { throw new InputError("same-origin request required", 403); }
+  // Next.js may construct req.url from its internal hostname behind a proxy.
+  // The browser's Host is the public authority used for cookie/origin isolation.
+  const host = req.headers.get("host") ?? new URL(req.url).host;
+  const protocol = req.headers.get("x-forwarded-proto")?.split(",")[0].trim() ?? new URL(req.url).protocol.slice(0, -1);
+  if (raw !== origin.origin || !["https:", "http:"].includes(origin.protocol) || origin.host !== host || origin.protocol !== `${protocol}:`) {
+    throw new InputError("same-origin request required", 403);
+  }
 }
 
 export function companionError(error: unknown) {

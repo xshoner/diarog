@@ -71,6 +71,7 @@ class LocationService : Service(), LocationListener {
                 QueueStore(this).use { it.enqueue(key, "location", body.toString()) }
             }
             lastSavedAt = location.time
+            Diagnostics(this).record("location", "위치 저장 성공 · ${Instant.ofEpochMilli(location.time)} · 정확도 ${location.accuracy.toInt()}m")
         } catch (_: Exception) { Settings(this).status = "위치 저장 실패. 대기 기록/저장 공간을 확인해 주세요." }
     }
     @Deprecated("Required on older Android versions")
