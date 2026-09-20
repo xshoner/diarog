@@ -134,15 +134,17 @@ class MainActivity : ComponentActivity() {
         section("2. 통화 녹음 → 글 → 요약")
         label("기존 녹음 파일(MP3/M4A 등)을 읽습니다. 통화를 직접 녹음하지 않습니다. 원본은 기기에 남으며, 전사문은 연결한 서버와 AI 요약 서비스로 전달됩니다.")
         label("녹음 1개당 최대 1시간·250MB. 15분 주기 작업마다 1개를 처리하며, 기기 절전 상태에 따라 지연될 수 있습니다.")
-        button("한국어 모델 다운로드 · Wi-Fi · 약 82MB") {
+        val bundledModel = SpeechModel.bundled(this)
+        if(bundledModel) label("한국어 모델이 앱에 포함되어 있습니다. 인터넷 없이 아래 버튼으로 설치하세요.")
+        button(if(bundledModel) "한국어 모델 설치 · 인터넷 불필요" else "한국어 모델 다운로드 / 이어받기 · Wi-Fi · 약 83MB") {
             downloadModel(false)
         }
-        button("모바일 데이터로 모델 다운로드") {
+        if(!bundledModel) button("모바일 데이터로 모델 다운로드") {
             AlertDialog.Builder(this).setTitle("모바일 데이터를 사용할까요?")
                 .setMessage("약 83MB를 다운로드합니다. 통신 요금이 발생할 수 있습니다.")
                 .setPositiveButton("다운로드") { _, _ -> downloadModel(true) }.setNegativeButton("취소", null).show()
         }
-        button("모델 다운로드 취소") { WorkManager.getInstance(this).cancelUniqueWork("speech-model") }
+        button("모델 설치 중지 · 받은 파일은 보관") { WorkManager.getInstance(this).cancelUniqueWork("speech-model") }
         history = CheckBox(this).apply { text = "폴더의 과거 녹음도 가져오기"; isChecked = settings.since == 0L }
         layout.addView(history)
         history.setOnCheckedChangeListener { _, checked -> settings.since = if(checked) 0 else System.currentTimeMillis() }
@@ -235,11 +237,12 @@ class MainActivity : ComponentActivity() {
 
     private fun downloadModel(metered: Boolean) {
         if(SpeechModel.ready(this)) { diagnostics.record("model", "이미 설치되어 있습니다. 녹음 자동 수집을 켜 주세요."); updateStatus(); return }
+        val bundled = SpeechModel.bundled(this)
         WorkManager.getInstance(this).enqueueUniqueWork("speech-model", ExistingWorkPolicy.REPLACE,
             OneTimeWorkRequestBuilder<ModelDownloadWorker>()
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(if(metered) NetworkType.CONNECTED else NetworkType.UNMETERED).build())
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(if(bundled) NetworkType.NOT_REQUIRED else if(metered) NetworkType.CONNECTED else NetworkType.UNMETERED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, java.util.concurrent.TimeUnit.SECONDS).build())
-        diagnostics.record("model", if(metered) "인터넷 연결 후 다운로드 대기" else "요금 없는 Wi-Fi 대기 · 핫스팟/데이터 절약 Wi-Fi는 대기할 수 있습니다.")
+        diagnostics.record("model", if(bundled) "앱 내장 모델 설치 예약 · 인터넷 불필요" else if(metered) "인터넷 연결 후 이어받기 대기" else "요금 없는 Wi-Fi 대기 · 핫스팟/데이터 절약 Wi-Fi는 대기할 수 있습니다.")
     }
 
     private fun verifyConnection() {
