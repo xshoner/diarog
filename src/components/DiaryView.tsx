@@ -16,6 +16,7 @@ export default function DiaryView({ diary, date, editable = true, onUpdated, onC
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [learningMessage, setLearningMessage] = useState("");
   const [action, setAction] = useState<"rewrite" | "delete" | null>(null);
   const [sentences, setSentences] = useState(diary.sentences ?? []);
 
@@ -48,19 +49,23 @@ export default function DiaryView({ diary, date, editable = true, onUpdated, onC
     if (!draft.trim() || busy) return;
     setBusy(true);
     try {
-      const res = await api<{ sentences: DiaryEntry["sentences"] }>(`/api/diary/${date}`, {
+      const res = await api<{ sentences: DiaryEntry["sentences"]; learning?: { styleSaved: boolean; memoryUpdated: boolean } }>(`/api/diary/${date}`, {
         method: "PATCH",
         body: JSON.stringify({ sentIdx: idx, revised: draft }),
       });
       setSentences(res.sentences);
       onUpdated?.(res);
       setEditIdx(null);
-    } catch { /* 유지 */ }
+      setLearningMessage(res.learning?.memoryUpdated === false || res.learning?.styleSaved === false
+        ? "일기는 저장됐지만 개인화 일부를 갱신하지 못했어요. 설정 → 개인화 근거와 기억에서 확인해 주세요."
+        : "저장했어요. 직접 고친 문체를 다음 일기와 회고에 참고합니다.");
+    } catch { setLearningMessage("저장하지 못했어요. 수정 내용을 유지했으니 다시 시도해 주세요."); }
     setBusy(false);
   }
 
   return (
     <div className="bg-card border border-line rounded-2xl p-4">
+      {learningMessage && <p role="status" className="text-xs text-ink-soft mb-3">{learningMessage}</p>}
       {diary.one_line && (
         <div className="mb-3 pb-2.5 border-b border-line">
           <p className="text-[10px] font-semibold text-ink-soft tracking-widest mb-0.5">오늘의 한 줄</p>

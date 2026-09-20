@@ -16,12 +16,15 @@ class CompanionApi(private val server: String, private val token: String) {
         .callTimeout(295, TimeUnit.SECONDS).build()
     fun verify() = send("signals", null)
     fun upload(item: Pending) = send(if(item.kind == "audio") "transcripts" else "signals", item.body)
-    private fun send(path: String, body: String?) {
+    private fun send(path: String, body: String?): JSONObject {
         val builder = Request.Builder().url("$server/api/companion/$path").header("Authorization", "Bearer $token")
         if(body != null) builder.post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
-        client.newCall(builder.build()).execute().use {
+        val transport = if(body == null) client.newBuilder().callTimeout(20, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build() else client
+        transport.newCall(builder.build()).execute().use {
             if(!it.isSuccessful) throw HttpFailure(it.code)
-            if(JSONObject(it.body?.string() ?: "{}").optBoolean("ok") != true) throw IOException("서버 확인 응답이 없습니다.")
+            val result = JSONObject(it.body?.string() ?: "{}")
+            if(!result.optBoolean("ok")) throw IOException("서버 확인 응답이 없습니다.")
+            return result
         }
     }
 }

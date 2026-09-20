@@ -1,5 +1,8 @@
 import { requireUser, UnauthorizedError, unauthorizedResponse } from "@/lib/session";
 import { db } from "@/lib/supabase";
+import { refreshPersonalMemories } from "@/lib/memory";
+
+export const maxDuration = 300;
 
 // DELETE /api/diary/:date — 그날 일기 삭제 (Moment는 유지, 재확정으로 다시 생성 가능)
 export async function DELETE(_req: Request, ctx: { params: Promise<{ date: string }> }) {
@@ -23,7 +26,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ date: string 
     const { date } = await ctx.params;
     const userId = profile.user_id;
     const { sentIdx, revised } = await req.json();
-    if (typeof sentIdx !== "number" || typeof revised !== "string" || !revised.trim()) {
+    if (!Number.isInteger(sentIdx) || sentIdx < 0 || typeof revised !== "string" || !revised.trim()) {
       return Response.json({ error: "bad request" }, { status: 400 });
     }
 
@@ -38,17 +41,19 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ date: string 
     sentences[sentIdx] = { ...sentences[sentIdx], text: revised.trim().slice(0, 500) };
     const bodyFinal = sentences.map((s) => s.text).join(" ");
 
-    await db().from("diary_entries").update({
+    const { error: saveError } = await db().from("diary_entries").update({
       sentences, body_final: bodyFinal, edited: true,
     }).eq("user_id", userId).eq("date", date);
+    if (saveError) throw saveError;
 
     // (원문, 수정문) 쌍 저장 — 페르소나 2층 학습 데이터
-    await db().from("persona_edits").insert({
+    const { error: learningError } = await db().from("persona_edits").insert({
       user_id: userId, source: "diary", original, revised: revised.trim().slice(0, 500),
     });
     await db().from("analytics_events").insert({ user_id: userId, name: "diary_sentence_edited" });
 
-    return Response.json({ ok: true, sentences, body: bodyFinal });
+    const memoryUpdated = await refreshPersonalMemories(userId, date).then(() => true).catch(() => false);
+    return Response.json({ ok: true, sentences, body: bodyFinal, learning: { styleSaved: !learningError, memoryUpdated } });
   } catch (e) {
     if (e instanceof UnauthorizedError) return unauthorizedResponse();
     return Response.json({ error: String(e) }, { status: 500 });

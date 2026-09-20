@@ -40,9 +40,20 @@ class MainActivity : ComponentActivity() {
     private lateinit var location: Button
     private lateinit var folderLabel: TextView
     private lateinit var layout: LinearLayout
+    private lateinit var connectionLight: TextView
+    private lateinit var modules: TextView
+    private lateinit var diagnostics: Diagnostics
+    private var checkingConnection = false
+    private var lastCheck = 0L
+    private var modelWork = ""
+    private var syncWork = ""
     private var busy = false
     private val handler = Handler(Looper.getMainLooper())
-    private val refresh = object : Runnable { override fun run() { updateStatus(); handler.postDelayed(this, 2000) } }
+    private val refresh = object : Runnable { override fun run() {
+        updateStatus()
+        if(settings.enabled && System.currentTimeMillis() - lastCheck > 30_000) verifyConnection()
+        handler.postDelayed(this, 2000)
+    } }
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if(uri != null) task {
@@ -70,6 +81,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = Settings(this)
+        diagnostics = Diagnostics(this)
         layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(28, 24, 28, 36)
             setBackgroundColor(Color.rgb(249, 247, 241))
@@ -81,6 +93,20 @@ class MainActivity : ComponentActivity() {
         setContentView(scroll)
         label("diarog", 32f, true)
         label("Android Companion", 20f, true)
+        label("버전 ${packageManager.getPackageInfo(packageName, 0).versionName}")
+        connectionLight = label("● 연결 확인 전", 17f, true)
+        modules = label("")
+        button("연결 및 모듈 상태 다시 확인") {
+            verifyConnection()
+            task {
+                if(HealthSteps.available(this)) {
+                    val granted = HealthConnectClient.getOrCreate(this).permissionController.getGrantedPermissions()
+                    settings.healthStatus = if(HealthSteps.permission in granted) "걸음 수 읽기 권한 허용" +
+                        if(HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in granted) " · 백그라운드 허용" else " · 앱에서 읽기 가능"
+                    else "걸음 수 읽기 권한 없음"
+                } else settings.healthStatus = "Health Connect 설치/업데이트 필요"
+            }
+        }
         label("일상의 맥락을, 내 일기로.\n필요한 수집 기능만 직접 켜세요.")
         button("데이터 사용 안내") { startActivity(Intent(this, PrivacyActivity::class.java)) }
         button("오픈소스 라이선스") { startActivity(Intent(this, LicenseActivity::class.java)) }
@@ -109,10 +135,14 @@ class MainActivity : ComponentActivity() {
         label("기존 녹음 파일(MP3/M4A 등)을 읽습니다. 통화를 직접 녹음하지 않습니다. 원본은 기기에 남으며, 전사문은 연결한 서버와 AI 요약 서비스로 전달됩니다.")
         label("녹음 1개당 최대 1시간·250MB. 15분 주기 작업마다 1개를 처리하며, 기기 절전 상태에 따라 지연될 수 있습니다.")
         button("한국어 모델 다운로드 · Wi-Fi · 약 82MB") {
-            WorkManager.getInstance(this).enqueueUniqueWork("speech-model", ExistingWorkPolicy.KEEP,
-                OneTimeWorkRequestBuilder<ModelDownloadWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.UNMETERED).build()).build())
-            settings.status = "Wi-Fi 연결 후 모델을 다운로드합니다."
+            downloadModel(false)
         }
+        button("모바일 데이터로 모델 다운로드") {
+            AlertDialog.Builder(this).setTitle("모바일 데이터를 사용할까요?")
+                .setMessage("약 83MB를 다운로드합니다. 통신 요금이 발생할 수 있습니다.")
+                .setPositiveButton("다운로드") { _, _ -> downloadModel(true) }.setNegativeButton("취소", null).show()
+        }
+        button("모델 다운로드 취소") { WorkManager.getInstance(this).cancelUniqueWork("speech-model") }
         history = CheckBox(this).apply { text = "폴더의 과거 녹음도 가져오기"; isChecked = settings.since == 0L }
         layout.addView(history)
         history.setOnCheckedChangeListener { _, checked -> settings.since = if(checked) 0 else System.currentTimeMillis() }
@@ -179,7 +209,7 @@ class MainActivity : ComponentActivity() {
                     withContext(Dispatchers.IO) { SyncGate.mutex.withLock {
                         contentResolver.persistedUriPermissions.forEach { runCatching { contentResolver.releasePersistableUriPermission(it.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
                         synchronized(LocalState.lock) {
-                            QueueStore(this@MainActivity).use { it.clear() }; settings.clear()
+                            QueueStore(this@MainActivity).use { it.clear() }; settings.clear(); diagnostics.clear()
                             java.io.File(cacheDir, "call-input.tmp").delete()
                         }
                     } }
@@ -187,6 +217,51 @@ class MainActivity : ComponentActivity() {
                 } }.setNegativeButton("취소", null).show()
         }
         if(settings.enabled) SyncWorker.schedule(this)
+        WorkManager.getInstance(this).getWorkInfosForUniqueWorkLiveData("speech-model").observe(this) { infos ->
+            modelWork = infos.firstOrNull { !it.state.isFinished }?.let {
+                if(it.state == WorkInfo.State.RUNNING) "실행 중" else "네트워크 조건/Android 실행 대기"
+            } ?: infos.lastOrNull()?.state?.let { when(it) {
+                WorkInfo.State.FAILED -> "실패 · 아래 원인 확인"
+                WorkInfo.State.CANCELLED -> "취소됨"
+                else -> ""
+            } } ?: ""
+            updateStatus()
+        }
+        WorkManager.getInstance(this).getWorkInfosByTagLiveData("companion-sync").observe(this) { infos ->
+            syncWork = if(infos.any { it.state == WorkInfo.State.RUNNING }) "실행 중" else if(infos.any { !it.state.isFinished }) "예약됨 · 네트워크/배터리/주기 대기" else "예약 없음"
+            updateStatus()
+        }
+    }
+
+    private fun downloadModel(metered: Boolean) {
+        if(SpeechModel.ready(this)) { diagnostics.record("model", "이미 설치되어 있습니다. 녹음 자동 수집을 켜 주세요."); updateStatus(); return }
+        WorkManager.getInstance(this).enqueueUniqueWork("speech-model", ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<ModelDownloadWorker>()
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(if(metered) NetworkType.CONNECTED else NetworkType.UNMETERED).build())
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, java.util.concurrent.TimeUnit.SECONDS).build())
+        diagnostics.record("model", if(metered) "인터넷 연결 후 다운로드 대기" else "요금 없는 Wi-Fi 대기 · 핫스팟/데이터 절약 Wi-Fi는 대기할 수 있습니다.")
+    }
+
+    private fun verifyConnection() {
+        if(checkingConnection || !settings.enabled) return
+        checkingConnection = true; lastCheck = System.currentTimeMillis()
+        val generation = settings.generation
+        val url = settings.server; val credential = settings.token
+        lifecycleScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) { CompanionApi(url, credential).verify() }
+                if(settings.enabled && settings.generation == generation) { diagnostics.verified(); diagnostics.capabilities(response) }
+            } catch(e: kotlinx.coroutines.CancellationException) { throw e }
+            catch(e: Exception) {
+                if(settings.generation == generation) {
+                    diagnostics.disconnected(if(e is HttpFailure) "연결 확인 실패 (HTTP ${e.code})" else "연결 확인 실패 · 네트워크 확인")
+                    if(e is HttpFailure && e.code in listOf(401, 403)) {
+                        settings.enabled = false; SyncWorker.cancel(this@MainActivity)
+                        stopService(Intent(this@MainActivity, LocationService::class.java))
+                    }
+                }
+            } finally { checkingConnection = false; updateStatus() }
+        }
     }
 
     private fun connect() = task {
@@ -201,6 +276,7 @@ class MainActivity : ComponentActivity() {
                 java.io.File(cacheDir, "call-input.tmp").delete()
                 settings.server = url; settings.token = credential; settings.audio = false; settings.steps = false
                 settings.generation = java.util.UUID.randomUUID().toString(); settings.enabled = true
+                diagnostics.clear(); diagnostics.verified()
             }
         } }
         audio.isChecked = false; steps.isChecked = false
@@ -245,7 +321,25 @@ class MainActivity : ComponentActivity() {
     private fun updateStatus() {
         if(!::status.isInitialized) return
         val counts = QueueStore(this).use { "전송 대기 ${it.count()}개 · 녹음 변환 실패 ${it.failedCount()}개" }
-        status.text = "${if(settings.enabled) "서버 연결됨" else "서버 연결 안 됨"} · 모델 ${if(SpeechModel.ready(this)) "준비됨" else "다운로드 필요"}\n${settings.status}\n${settings.healthStatus}\n$counts${if(busy) "\n처리 중…" else ""}"
+        val connected = settings.enabled && diagnostics.fresh()
+        connectionLight.text = "● " + if(connected) "서버 연결 확인됨" else if(settings.enabled) "연결 미확인 / 오프라인" else "연결 필요"
+        connectionLight.setTextColor(if(connected) Color.rgb(25, 118, 235) else Color.rgb(120, 120, 120))
+        if(connected && connectionLight.animation == null) connectionLight.startAnimation(android.view.animation.AlphaAnimation(1f, 0.35f).apply {
+            duration = 900; repeatCount = android.view.animation.Animation.INFINITE; repeatMode = android.view.animation.Animation.REVERSE
+        }) else if(!connected) connectionLight.clearAnimation()
+        val verifiedAt = diagnostics.time("connection").let { if(it == 0L) "없음" else java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it)) }
+        val folderGranted = settings.folder.isNotEmpty() && contentResolver.persistedUriPermissions.any { it.uri.toString() == settings.folder && it.isReadPermission }
+        modules.text = "연결: ${diagnostics.message("connection")}\n최근 확인: $verifiedAt\n" +
+            "서버 기능: ${diagnostics.message("server")}\n" +
+            "한국어 모델: ${if(SpeechModel.ready(this)) "준비됨" else "설치 필요"} $modelWork\n${diagnostics.message("model", "다운로드 버튼을 눌러 주세요.")}\n" +
+            "녹음 폴더: ${if(folderGranted) "읽기 권한 유지" else "선택/권한 확인 필요"}\n" +
+            "전사: ${if(settings.audio) diagnostics.message("audio") else "수집 꺼짐"}\n" +
+            "요약·전송: ${diagnostics.message("upload")}\n" +
+            "최근 통화 요약: ${diagnostics.message("summary")}\n" +
+            "걸음 수: ${if(settings.steps) settings.healthStatus else "수집 꺼짐 · ${settings.healthStatus}"}\n" +
+            "위치: ${if(LocationService.active) "수집 서비스 실행 중" else "중지됨"} · ${diagnostics.message("location")}\n" +
+            "자동 동기화: $syncWork"
+        status.text = "${settings.status}\n$counts${if(busy) "\n처리 중…" else ""}"
         location.text = if(LocationService.active) "위치 수집 중지" else "위치 수집 시작"
     }
     private fun section(text: String) { label("\n$text", 20f, true) }

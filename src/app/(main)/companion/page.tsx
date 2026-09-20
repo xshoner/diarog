@@ -15,13 +15,20 @@ export default function CompanionPage() {
   const [date, setDate] = useState(() => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10));
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(0);
+  const [live, setLive] = useState(false);
   const load = useCallback(async () => {
     const [d, s] = await Promise.all([
       api<{ devices: Device[] }>("/api/companion/devices"), api<{ signals: Signal[] }>("/api/signals"),
     ]);
-    setDevices(d.devices); setSignals(s.signals);
+    setDevices(d.devices); setSignals(s.signals); setLive(true); setNow(Date.now());
   }, []);
-  useEffect(() => { load().catch(() => setMessage("로그인 상태와 서버 연결을 확인해 주세요.")); }, [load]);
+  useEffect(() => {
+    const refresh = () => { setNow(Date.now()); if(document.visibilityState === "visible") load().catch(() => { setLive(false); setMessage("서버 상태를 갱신하지 못했습니다. 마지막 조회 결과입니다."); }); };
+    refresh();
+    const timer = setInterval(refresh, 15_000);
+    return () => clearInterval(timer);
+  }, [load]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true); setMessage("");
@@ -48,7 +55,11 @@ export default function CompanionPage() {
       </div>}
       <p className="text-xs text-ink-soft">앱에서 서버 주소와 토큰을 저장한 뒤 필요한 수집 기능만 켜세요. 연결 해제는 이후 업로드를 차단합니다.</p>
       {devices.map((d) => <div key={d.id} className="border-t border-line pt-3 text-sm">
-        <strong>{d.name}</strong><p className="text-xs text-ink-soft">{d.revoked_at ? "연결 해제됨" : `만료: ${new Date(d.expires_at).toLocaleDateString()}`} · 마지막 연결: {d.last_seen_at ? new Date(d.last_seen_at).toLocaleString() : "아직 없음"}</p>
+        <strong>{d.name}</strong>
+        <p className="text-sm">{live && !d.revoked_at && Date.parse(d.expires_at) > now && d.last_seen_at && now - Date.parse(d.last_seen_at) >= 0 && now - Date.parse(d.last_seen_at) < 90_000
+          ? <><span aria-hidden="true" className="inline-block w-2 h-2 rounded-full bg-blue-500 motion-safe:animate-pulse mr-2" />최근 90초 내 서버 응답 확인</>
+          : d.revoked_at ? "연결 해제됨" : Date.parse(d.expires_at) <= now ? "토큰 만료" : "현재 연결 미확인"}</p>
+        <p className="text-xs text-ink-soft">만료: {new Date(d.expires_at).toLocaleDateString()} · 마지막 연결: {d.last_seen_at ? new Date(d.last_seen_at).toLocaleString() : "아직 없음"}</p>
         {!d.revoked_at && <button disabled={busy} onClick={() => run(async () => { await api("/api/companion/devices", { method: "DELETE", body: JSON.stringify({ id: d.id }) }); setToken(""); })}>연결 해제</button>}
       </div>)}
     </section>
@@ -58,7 +69,8 @@ export default function CompanionPage() {
       <input type="date" aria-label="일기 날짜" value={date} onChange={(e) => setDate(e.target.value)} className="border border-line rounded-lg p-2" />
       <button disabled={busy || !date} className="ml-3" onClick={() => {
         if (confirm(`${date} 일기를 생성할까요? 기존 일기와 직접 수정한 내용이 있으면 새 내용으로 바뀝니다.`)) void run(async () => {
-          await api(`/api/days/${date}/confirm`, { method: "POST", body: "{}" }); setMessage("일기를 만들었어요. 해당 날짜 기록에서 확인할 수 있어요.");
+          const result = await api<{ learning?: { memoryUpdated: boolean } }>(`/api/days/${date}/confirm`, { method: "POST", body: "{}" });
+          setMessage(result.learning?.memoryUpdated === false ? "일기는 저장됐지만 기억 갱신에 실패했습니다. 설정 → 개인화 근거와 기억에서 재시도하세요." : "일기를 만들었어요. 해당 날짜 기록에서 확인할 수 있어요.");
         });
       }}>일기 생성</button>
     </section>

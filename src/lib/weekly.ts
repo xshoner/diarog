@@ -2,6 +2,7 @@ import { db } from "./supabase";
 import { chatJSON, ChatMessage } from "./letsur";
 import { personaSystemPrompt } from "./personas";
 import { addDays } from "./time";
+import { personalWritingContext, personalWritingInstructions } from "./persona-context";
 
 // Call-3: 주간 회고 (§8.4, FR-7)
 
@@ -53,6 +54,7 @@ export async function generateWeeklyReview(userId: string, weekStart: string): P
 
   const system = [
     personaSystemPrompt(profile?.persona_type ?? "plain"),
+    personalWritingInstructions,
     "",
     "작업: 이번 주 확정 기록을 바탕으로 주간 회고를 5~8문장으로 쓴다.",
     "하이라이트 Moment 3개를 선정하고 이유를 붙인다.",
@@ -62,7 +64,7 @@ export async function generateWeeklyReview(userId: string, weekStart: string): P
 
   const messages: ChatMessage[] = [
     { role: "system", content: system },
-    { role: "user", content: `주간(${weekStart}~) Moment 목록:\n${JSON.stringify(moments, null, 1)}\n\n통계: ${JSON.stringify(stats)}` },
+    { role: "user", content: JSON.stringify({ weekStart, moments, stats, personalWritingContext: await personalWritingContext(userId, addDays(weekEnd, 1)) }) },
   ];
 
   try {

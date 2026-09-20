@@ -11,6 +11,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class MainActivityTest {
     @Test fun firstLaunchStartsWithoutEnablingCollection() {
+        androidx.work.WorkManager.initialize(org.robolectric.RuntimeEnvironment.getApplication(), androidx.work.Configuration.Builder().build())
         Robolectric.buildActivity(MainActivity::class.java).use { controller ->
             val activity = controller.setup().get()
             val settings = Settings(activity)

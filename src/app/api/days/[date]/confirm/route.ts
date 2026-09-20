@@ -53,7 +53,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
 
     // 검색 인덱스 + 장기 기억 갱신 (실패해도 일기 확정은 유지)
     await indexMoments(userId, date).catch(() => {});
-    await refreshPersonalMemories(userId, date).catch(() => {});
+    const memoryUpdated = await refreshPersonalMemories(userId, date).then(() => true).catch(() => false);
 
     await db().from("analytics_events").insert({
       user_id: userId,
@@ -69,6 +69,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
 
     return Response.json({
       ok: true,
+      learning: { memoryUpdated },
       diary: { sentences: diary.sentences, oneLine: diary.oneLine, body: diary.body },
     });
   } catch (e) {

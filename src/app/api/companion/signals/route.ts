@@ -5,7 +5,10 @@ import { readJsonLimited, signalRows } from "@/lib/signal-validation";
 export async function GET(req: Request) {
   try {
     const device = await requireDevice(req);
-    return Response.json({ ok: true, deviceId: device.id }, { headers: { "Cache-Control": "no-store" } });
+    const { error } = await db().from("life_signals").select("id").eq("user_id", device.user_id).limit(1);
+    return Response.json({ ok: true, deviceId: device.id, protocol: 2,
+      capabilities: { signalStorage: !error, summaryConfigured: !!process.env.LETSUR_API_KEY },
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) { return companionError(e); }
 }
 
