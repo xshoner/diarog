@@ -6,12 +6,14 @@ test("personalization scopes sources to the owner, prioritizes corrections, and 
   let failRead = false, failWrite = false;
   const stored: Record<string, unknown>[] = [];
   const requests: URL[] = [];
+  const activity: Array<{ props: { status: string; saved?: number } }> = [];
   const server = createServer(async (req, res) => {
     const url = new URL(req.url!, "http://localhost"); requests.push(url);
     const chunks: Buffer[] = []; for await(const chunk of req) chunks.push(Buffer.from(chunk));
     const body = Buffer.concat(chunks).toString();
     res.setHeader("Content-Type", "application/json");
     const reply = (data: unknown, status = 200) => { res.statusCode = status; res.end(JSON.stringify(data)); };
+    if(url.pathname === "/rest/v1/analytics_events") { activity.push(JSON.parse(body)); return reply([]); }
     if(url.pathname === "/rest/v1/diary_entries") return failRead ? reply({ message: "unavailable" }, 503) : reply([{ date: "2026-09-19", body_final: "짧은 문장이 좋다.", edited: true }]);
     if(url.pathname === "/rest/v1/persona_edits") return reply([{ original: "긴 문장", revised: "짧게." }]);
     if(["/rest/v1/moments", "/rest/v1/life_signals"].includes(url.pathname)) return reply([]);
@@ -53,8 +55,11 @@ test("personalization scopes sources to the owner, prioritizes corrections, and 
   assert.equal(stored.length, 1);
   assert.equal(stored[0].user_id, "owner");
   assert.equal(stored[0].confidence, 0.9);
+  assert.equal(activity.at(-1)?.props.status, "completed");
+  assert.equal(activity.at(-1)?.props.saved, 1);
   failWrite = true;
   await assert.rejects(refreshPersonalMemories("owner", "2026-09-19"), /memory save failed/);
+  assert.equal(activity.at(-1)?.props.status, "failed");
   failRead = true;
   await assert.rejects(personalWritingContext("owner", "2026-09-20"), /unavailable/);
   await assert.rejects(refreshPersonalMemories("owner", "2026-09-19"), /unavailable/);

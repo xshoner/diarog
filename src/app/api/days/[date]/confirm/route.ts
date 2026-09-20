@@ -3,6 +3,7 @@ import { db } from "@/lib/supabase";
 import { generateDiary, indexMoments } from "@/lib/diary";
 import { refreshPersonalMemories } from "@/lib/memory";
 import { kstDayRange } from "@/lib/time";
+import { recordLearningActivity } from "@/lib/learning-activity";
 
 export const maxDuration = 300;
 
@@ -15,6 +16,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
     const userId = profile.user_id;
     const body = await req.json().catch(() => ({}));
     const startedAt = Date.now();
+    if(body.preserveExisting === true) {
+      const { data: existing, error } = await db().from("diary_entries").select("date").eq("user_id", userId).eq("date", date).maybeSingle();
+      if(error) throw error;
+      if(existing) return Response.json({ ok: true, skipped: true });
+    }
 
     // draft → confirmed
     const { data: drafts } = await db().from("moments")
@@ -38,7 +44,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
 
     // Call-2 일기 생성
     const diary = await generateDiary(userId, date);
-    const { error: saveError } = await db().from("diary_entries").upsert({
+    const { data: savedDiary, error: saveError } = await db().from("diary_entries").upsert({
       user_id: userId,
       date,
       body_generated: diary.body,
@@ -48,8 +54,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ date: string }
       persona_type_used: diary.personaType,
       few_shot_count: diary.fewShotCount,
       edited: false,
-    }, { onConflict: "user_id,date" });
+    }, { onConflict: "user_id,date", ignoreDuplicates: body.preserveExisting === true }).select("date").maybeSingle();
     if (saveError) throw saveError;
+    if(body.preserveExisting === true && !savedDiary) return Response.json({ ok: true, skipped: true });
+    await recordLearningActivity(userId, "diary_context", { date, status: "completed", ...diary.context });
 
     // 검색 인덱스 + 장기 기억 갱신 (실패해도 일기 확정은 유지)
     await indexMoments(userId, date).catch(() => {});

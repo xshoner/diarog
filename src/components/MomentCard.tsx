@@ -2,6 +2,7 @@
 
 import type { Moment, PhotoOut, Evidence } from "@/lib/types";
 import EvidenceBadges from "./EvidenceBadges";
+import ContextEvidence from "./ContextEvidence";
 
 function timeLabel(iso: string | null): string {
   if (!iso) return "";
@@ -74,6 +75,7 @@ export default function MomentCard({
           </div>
         </div>
       </div>
+      <ContextEvidence moment={moment} />
       {children}
     </div>
   );

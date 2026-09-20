@@ -1,5 +1,6 @@
 import { db } from "./supabase";
 import { chatJSON, embed, type ChatMessage } from "./letsur";
+import { recordLearningActivity } from "./learning-activity";
 
 type MemoryKind = "preference" | "routine" | "relationship" | "goal" | "fact" | "pattern";
 
@@ -13,6 +14,18 @@ interface MemoryExtraction {
 }
 
 export async function refreshPersonalMemories(userId: string, date: string): Promise<void> {
+  const runId = crypto.randomUUID();
+  await recordLearningActivity(userId, "memory_refresh", { runId, date, status: "running" });
+  try {
+    const result = await extractPersonalMemories(userId, date);
+    await recordLearningActivity(userId, "memory_refresh", { runId, date, status: "completed", ...result });
+  } catch(e) {
+    await recordLearningActivity(userId, "memory_refresh", { runId, date, status: "failed", reason: "기억 추출 또는 저장 실패. 해당 일기 반영을 다시 시도해 주세요." });
+    throw e;
+  }
+}
+
+async function extractPersonalMemories(userId: string, date: string) {
   const results = await Promise.all([
     db().from("diary_entries").select("body_final, one_line").eq("user_id", userId).eq("date", date).maybeSingle(),
     db().from("moments").select("title, place_name, people, mood, memo, ai").eq("user_id", userId).eq("date", date)
@@ -26,7 +39,8 @@ export async function refreshPersonalMemories(userId: string, date: string): Pro
   if (results.some(r => r.error)) throw new Error("memory sources unavailable");
   const [{ data: diary }, { data: moments }, { data: signals }] = results;
 
-  if (!diary?.body_final && !(moments?.length) && !(signals?.length)) return;
+  const sources = { diary: diary?.body_final ? 1 : 0, moments: moments?.length ?? 0, signals: signals?.length ?? 0 };
+  if (!sources.diary && !sources.moments && !sources.signals) return { saved: 0, sources };
 
   const system = [
     "너는 사용자의 장기 기억을 갱신하는 개인 컨텍스트 추출기다.",
@@ -48,6 +62,7 @@ export async function refreshPersonalMemories(userId: string, date: string): Pro
 
   const result = await chatJSON<MemoryExtraction>(messages, { userId, kind: "call4", maxTokens: 2500, temperature: 0.2 });
   if (!Array.isArray(result.memories)) throw new Error("invalid memory response");
+  let saved = 0;
   for (const m of result.memories.slice(0, 6)) {
     const content = typeof m?.content === "string" ? m.content.trim().slice(0, 600) : "";
     const confidence = Number(m?.confidence ?? 0.7);
@@ -65,7 +80,9 @@ export async function refreshPersonalMemories(userId: string, date: string): Pro
       last_seen_at: new Date().toISOString(),
     }, { onConflict: "user_id,kind,content" });
     if (error) throw new Error("memory save failed");
+    saved++;
   }
+  return { saved, sources };
 }
 
 export async function recentPersonalMemories(userId: string, limit = 12): Promise<Array<{kind: string; content: string; confidence: number}>> {

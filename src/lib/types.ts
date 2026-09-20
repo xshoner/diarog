@@ -25,6 +25,11 @@ export interface Moment {
     inferences?: Array<{ text: string; confidence?: number }>;
     ocr_texts?: string[];
     title_candidates?: string[];
+    context?: {
+      assembledAt: string; interpreted: boolean; signalsAvailable: boolean; memoriesAvailable: boolean;
+      truncated: boolean; sourceCounts: Record<string, number>;
+      suppliedSignalIds: string[]; citedSignalIds: string[]; suppliedMemoryIds: string[]; citedMemoryIds: string[];
+    };
   } | null;
 }
 
