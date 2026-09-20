@@ -15,7 +15,7 @@ https://github.com/square/okhttp
 Kotlin / kotlinx.coroutines — JetBrains and contributors — Apache License 2.0
 https://github.com/JetBrains/kotlin
 
-The Korean model is downloaded separately at the user's request.
+The Korean model is included unchanged in the offline APK; other builds download it at the user's request.
 The following Apache License 2.0 applies to the components listed above.
 
                                  Apache License

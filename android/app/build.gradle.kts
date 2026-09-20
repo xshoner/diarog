@@ -7,8 +7,8 @@ android {
         applicationId = "app.diarog.companion"
         minSdk = 28
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
@@ -18,6 +18,8 @@ android {
     }
     buildTypes { release { isMinifyEnabled = false } }
     testOptions { unitTests.isIncludeAndroidResources = true }
+    // Optional verified model directory for an APK that installs speech entirely offline.
+    providers.gradleProperty("bundledModelDir").orNull?.let { sourceSets.getByName("main").assets.srcDir(it) }
 }
 
 dependencies {
