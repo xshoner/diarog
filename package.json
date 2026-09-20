@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:companion": "tsx --test tests/companion.test.ts tests/companion-api.test.ts",
-    "test:persona": "tsx --test tests/persona.test.ts"
+    "test:persona": "tsx --test tests/persona.test.ts tests/context.test.ts tests/assembly-context.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

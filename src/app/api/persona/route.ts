@@ -14,14 +14,23 @@ export async function GET() {
   try {
     const { profile } = await requireUser();
     const userId = profile.user_id;
-    const [memories, diaries, corrections] = await Promise.all([
+    const [memories, diaries, corrections, activity] = await Promise.all([
       db().from("personal_memories").select("id,kind,content,confidence,source_date,last_seen_at,evidence")
         .eq("user_id", userId).order("last_seen_at", { ascending: false }).limit(100),
       db().from("diary_entries").select("date,edited").eq("user_id", userId).order("date", { ascending: false }).limit(100),
       db().from("persona_edits").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("source", "diary"),
+      db().from("analytics_events").select("id,name,props,created_at").eq("user_id", userId)
+        .in("name", ["context_assembled", "memory_refresh", "diary_context"]).order("created_at", { ascending: false }).limit(40),
     ]);
     if (memories.error || diaries.error || corrections.error) throw new Error("unavailable");
-    return Response.json({ memories: memories.data, diaries: diaries.data, corrections: corrections.count ?? 0 }, { headers: { "Cache-Control": "no-store" } });
+    const seen = new Set<string>();
+    const activities = (activity.data ?? []).filter(a => {
+      const key = a.props?.runId ?? a.id;
+      if(seen.has(key)) return false;
+      seen.add(key); return true;
+    }).slice(0, 20);
+    return Response.json({ memories: memories.data, diaries: diaries.data, corrections: corrections.count ?? 0,
+      activities, activityAvailable: !activity.error }, { headers: { "Cache-Control": "no-store" } });
   } catch(e) { return failure(e); }
 }
 export async function POST(req: Request) {

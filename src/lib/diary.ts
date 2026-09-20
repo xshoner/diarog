@@ -33,7 +33,7 @@ interface MomentRow {
   linked_event_id: string | null;
 }
 
-export async function generateDiary(userId: string, date: string): Promise<{ sentences: DiarySentence[]; oneLine: string; body: string; fewShotCount: number; personaType: string }> {
+export async function generateDiary(userId: string, date: string) {
   const { data: profile } = await db().from("users_profile")
     .select("persona_type").eq("user_id", userId).single();
   const personaType = profile?.persona_type ?? "plain";
@@ -110,7 +110,7 @@ export async function generateDiary(userId: string, date: string): Promise<{ sen
     .filter((s) => s.sentence?.trim())
     .map((s) => ({
       text: s.sentence.trim(),
-      evidence_refs: s.evidence_refs ?? [],
+      evidence_refs: Array.isArray(s.evidence_refs) ? s.evidence_refs.filter((ref): ref is string => typeof ref === "string").slice(0, 30) : [],
       kind: s.kind === "inference" ? "inference" : "fact",
     }));
   if (sentences.length === 0) throw new Error("empty diary");
@@ -118,7 +118,10 @@ export async function generateDiary(userId: string, date: string): Promise<{ sen
   const body = sentences.map((s) => s.text).join(" ");
   const oneLine = result.one_line?.trim() || sentences[0].text;
 
-  return { sentences, oneLine, body, fewShotCount: writingContext.corrections.length, personaType };
+  const signalIds = new Set((signals ?? []).map(s => s.id));
+  const citedSignals = new Set(sentences.flatMap(s => s.evidence_refs).filter(ref => ref.endsWith(":signal") && signalIds.has(ref.slice(0, -7))));
+  return { sentences, oneLine, body, fewShotCount: writingContext.corrections.length, personaType,
+    context: { signals: signals?.length ?? 0, citedSignals: citedSignals.size, memories: longTermMemories.length, corrections: writingContext.corrections.length } };
 }
 
 /** 확정된 Moment들의 검색 인덱스 생성 (FR-8.1) */

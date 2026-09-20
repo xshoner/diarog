@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { api, GeoReason, processPhoto, requestDeviceLocation, uploadPhoto } from "@/lib/client";
 
 interface Item {
@@ -13,7 +14,8 @@ interface Item {
 }
 
 // 화면 우측 하단에 표시되는 빌드 표식 — 폰이 옛 번들을 캐시 중인지 판별용
-const UI_BUILD = "v8";
+const UI_BUILD = "v9";
+type Assembly = { moments: number; context?: { supplied: number; cited: number; memories: number; interpreted: number; signalsAvailable: boolean; memoriesAvailable: boolean; truncated: boolean; sourceCounts: Record<string, number> } };
 
 // 사진 수집 (FR-2.1): 다중 선택 → 클라이언트 EXIF/다운스케일 → 업로드 → 재조립
 export default function UploadPage() {
@@ -25,6 +27,7 @@ export default function UploadPage() {
   const [doneCount, setDoneCount] = useState(0);
   const [gpsCount, setGpsCount] = useState(0);
   const [dupCount, setDupCount] = useState(0);
+  const [assemblyNotes, setAssemblyNotes] = useState<Record<string, string>>({});
   const [geo, setGeo] = useState<{ loc: { lat: number; lng: number } | null; reason: GeoReason | "checking" }>(
     { loc: null, reason: "checking" });
   const geoPromise = useRef<ReturnType<typeof requestDeviceLocation> | null>(null);
@@ -38,6 +41,23 @@ export default function UploadPage() {
     return p;
   }, []);
   useEffect(() => { requestGeo(); }, [requestGeo]);
+
+  async function assembleWithContext(date: string) {
+    const result = await api<Assembly>("/api/moments/assemble", { method: "POST", body: JSON.stringify({ date }) });
+    const c = result.context;
+    const message = !c ? "새로 분석할 사진이 없습니다. 확정된 순간·일기는 유지됩니다."
+      : `${result.moments}개 순간 분석 · 통화 ${c.sourceCounts.audio ?? 0}개, 위치 ${c.sourceCounts.location ?? 0}개, 걸음 집계 ${c.sourceCounts.steps ?? 0}개, 기억 ${c.memories}개 제공. AI 근거 선택 ${c.cited}개.` +
+        (c.interpreted < result.moments ? " 일부 AI 분석 실패/사용량 제한으로 기본 제목을 저장했습니다." : "") +
+        (!c.signalsAvailable || !c.memoriesAvailable ? " 일부 자료 조회 실패 — 다시 반영해 주세요." : "") +
+        (c.truncated ? " 그날 최근 1,000개 기록 범위에서 선택했습니다." : "");
+    setAssemblyNotes(prev => ({ ...prev, [date]: message }));
+  }
+  async function refreshContext(date: string) {
+    setAssembling(true);
+    try { await assembleWithContext(date); }
+    catch { setAssemblyNotes(prev => ({ ...prev, [date]: "맥락 분석 실패. 사진은 유지됩니다. 다시 시도해 주세요." })); }
+    finally { setAssembling(false); }
+  }
 
   async function handleFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -94,14 +114,19 @@ export default function UploadPage() {
       try {
         const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
         for (const date of uploadedDates) {
-          await api("/api/moments/assemble", { method: "POST", body: JSON.stringify({ date }) }).catch(() => {});
+          try { await assembleWithContext(date); }
+          catch { setAssemblyNotes(prev => ({ ...prev, [date]: "사진 업로드 완료 · 맥락 분석 실패. 다시 반영해 주세요." })); continue; }
           // 지난 날짜에 사진을 뒤늦게 추가한 경우에는 새 Moment를 자동 확정하고
           // 일기 본문까지 재생성해 "나중에 올려도 기록이 완성되는" 경험을 제공한다.
           if (date < today) {
-            await api(`/api/days/${date}/confirm`, {
-              method: "POST",
-              body: JSON.stringify({ zeroEntry: true, source: "historical_photo_upload" }),
-            }).catch(() => {});
+            try {
+              const result = await api<{ skipped?: boolean; learning?: { memoryUpdated: boolean } }>(`/api/days/${date}/confirm`, {
+                method: "POST", body: JSON.stringify({ zeroEntry: true, source: "historical_photo_upload", preserveExisting: true }),
+              });
+              const note = result.skipped ? " 기존 일기는 유지했습니다. 새 순간은 해당 날짜에서 확인하세요." : result.learning?.memoryUpdated === false
+                ? " 일기 저장 완료 · 기억 갱신 실패. 개인화 화면에서 재시도하세요." : " 일기와 기억 갱신 완료.";
+              setAssemblyNotes(prev => ({ ...prev, [date]: (prev[date] ?? "") + note }));
+            } catch { setAssemblyNotes(prev => ({ ...prev, [date]: (prev[date] ?? "") + " 일기 생성 실패. 해당 날짜에서 다시 시도해 주세요." })); }
           }
         }
       } finally {
@@ -183,6 +208,17 @@ export default function UploadPage() {
       {assembling && (
         <p className="text-center text-sm text-accent mt-4 pulse-soft">AI가 순간을 조립하는 중…</p>
       )}
+      {Object.keys(assemblyNotes).length > 0 && <section className="mt-4 bg-card border border-line rounded-xl p-3 space-y-3">
+        <h2 className="text-sm font-semibold">사진과 함께 참고한 내 기록</h2>
+        <p className="text-xs text-ink-soft">촬영 시각 주변의 통화·위치, 그날 걸음 수와 기존 기억을 참고합니다. 아직 휴대폰에서 동기화하지 않은 기록은 포함되지 않습니다.</p>
+        {Object.entries(assemblyNotes).map(([date, message]) => <div key={date} className="text-xs space-y-2">
+          <p role="status">{date} · {message}</p>
+          <button disabled={busy} onClick={() => refreshContext(date)} className="text-accent underline mr-3">동기화한 기록 다시 반영</button>
+          <Link href={`/ritual/${date}`} className="underline">이 날짜 확인</Link>
+        </div>)}
+        <p className="text-xs text-ink-soft">다시 반영은 미확정 사진 순간만 분석합니다. 확정한 순간과 일기를 바꾸려면 해당 날짜에서 직접 수정·다시 쓰기를 선택하세요.</p>
+        <Link href="/persona" className="text-xs text-accent underline">학습·활용 이력 확인</Link>
+      </section>}
 
       {dupCount > 0 && !busy && (
         <p className="text-center text-xs text-ink-soft mt-3">
